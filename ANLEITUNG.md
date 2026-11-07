@@ -26,9 +26,14 @@ Du brauchst nur einen Browser.
    `https://DEINNAME.github.io/kraftcoach/`. Diese Adresse öffnest du auf dem Handy.
 
 ### Updates später hochladen
-Geänderte Dateien wieder per **Add file → Upload files** hochladen (gleiche Namen überschreiben).
-Wichtig: In `sw.js` oben die Zeile `const VERSION = 'kc-v1';` hochzählen (`kc-v2`, `kc-v3` …),
-damit das Handy die neue Version sicher lädt. Danach die App einmal schließen und neu öffnen.
+Im Repository **Add file → Upload files** → im Finder den Inhalt von *trainingsapp* mit ⌘A markieren
+und **ins Browserfenster ziehen** (nicht „choose your files“, sonst gehen die Ordner verloren).
+Gleichnamige Dateien werden automatisch überschrieben → **Commit changes**.
+Nach 1–2 Minuten ist das Update online (Reiter **Actions** zeigt einen grünen Haken).
+
+Bei Änderungen am Code muss in `sw.js` oben die Zeile `const VERSION = 'kc-…';` hochgezählt sein
+(`kc-v2`, `kc-v3` …), damit das Handy die neue Version sicher lädt. Danach die App am Handy einmal
+ganz schließen (vom unteren Rand hochwischen) und neu öffnen.
 
 ---
 
@@ -65,6 +70,16 @@ Danach startet KraftCoach wie eine normale App, im Vollbild und auch offline.
 ---
 
 ## 4. So benutzt du die App
+
+**Erster Start:** Eine kurze Einrichtung fragt nach deinen Zielen, Erfahrung, Trainingstagen, Körpergewicht
+und deinen **aktuellen Werten** (Gewicht × Wiederholungen, die du sauber schaffst) bei den wichtigsten Übungen.
+Mit diesen Startwerten schlägt die App sofort passende Gewichte vor (zur Sicherheit etwas leichter);
+Übungen ohne Startwert kalibriert sie vorsichtig. Alles später änderbar unter
+*Einstellungen → Startwerte ändern / Einrichtung neu*.
+
+**Check-in:** Vor dem Plan fragt „Wie geht's dir heute?“ nach Energie, Schlaf, Muskelkater, Schmerzen
+und einem Wunsch (z. B. Fokus Oberkörper). Bei niedriger Tagesform plant die App weniger Sätze,
+mehr Reserve und etwas kürzer; Schmerzbereiche werden komplett gemieden. Alles optional.
 
 **Heute:** Verfügbare Zeit wählen (Standard 50 Min) → **Plan erstellen**. Jede Übung zeigt die geschätzte Dauer.
 Mit ⇄ tauschst du eine Übung (z. B. Gerät belegt), mit ✕ entfernst du sie. Dann **Training starten**.
@@ -114,9 +129,10 @@ Dann im Browser <http://localhost:8123> öffnen. Mit `Ctrl + C` im Terminal wied
 |---|---|
 | `index.html`, `css/app.css` | Grundgerüst und Design (Dark Mode, große Tasten) |
 | `js/data/exercises.js` | Übungskatalog (≈ 60 Übungen) – die KI darf nur diese wählen |
+| `js/data/goals.js` | Ziele, Check-in-Optionen, Startwert-Übungen |
 | `js/logic/` | Rechenlogik: 1RM, Satzvorschläge, Zeitplanung, Erholung, lokaler Planer, Statistik |
 | `js/ai/` | Gemini-Anbindung, JSON-Schema-Prüfung, Prompt |
 | `js/views/` | Bildschirme: Heute, Training, Fortschritt, Übung, Einstellungen |
 | `js/store.js` | Speicherung im Browser (IndexedDB), Backup |
 | `sw.js`, `manifest.webmanifest` | Installation als App, Offline-Betrieb |
-| `tests/logic.test.js` | 64 automatische Tests |
+| `tests/logic.test.js` | 93 automatische Tests |

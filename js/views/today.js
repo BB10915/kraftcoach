@@ -7,12 +7,15 @@ import { makePlan } from '../ai/plan.js';
 import { makeItem } from '../logic/planner.js';
 import { itemSec, sessionSec } from '../logic/timing.js';
 import { muscleStatus } from '../logic/history.js';
+import { ENERGY, SLEEP, REGIONS, WISHES, DEFAULT_CHECKIN, checkinText } from '../data/goals.js';
 import { openPicker } from './picker.js';
 import { toast, confirmSheet, ICONS } from '../ui.js';
 import { esc, uid, fmtDate, fmtMin, fmtNum, relDays, clamp } from '../util.js';
 
 let budget = null;
 let loading = false;
+let checkin = { ...DEFAULT_CHECKIN, sore: [], pain: [] };
+let showBody = false;
 
 const plannedSession = () => [...S.sessions].reverse().find((s) => s.status === 'planned');
 
@@ -39,6 +42,7 @@ function planHtml(p) {
     </div>
     ${p.fallback ? `<div class="pill-note" style="margin-top:10px;color:var(--warn)">⚠︎ ${esc(p.fallback)}</div>` : ''}
     ${p.rationale ? `<p class="small" style="margin:10px 0 0">${esc(p.rationale)}</p>` : ''}
+    ${p.checkin ? `<p class="tiny muted" style="margin:8px 0 0">Tagesform: ${esc(checkinText(p.checkin))}</p>` : ''}
     <div class="row between" style="margin-top:12px">
       <span class="small muted">Geschätzte Dauer</span>
       <b class="num" style="color:${over ? 'var(--warn)' : 'var(--accent)'}">≈ ${fmtMin(total)} / ${p.budgetMin} Min</b>
@@ -67,6 +71,35 @@ function planHtml(p) {
   </div>`;
 }
 
+// ---------- Check-in: Wie geht's dir heute? ----------
+
+function chipRow(label, options, value, act) {
+  return `<div class="small muted" style="margin:12px 0 6px">${label}</div>
+    <div class="chips">${options.map(([k, l, icon]) => `<button class="chip ${value === k ? 'on' : ''}" data-act="${act}" data-v="${k}">${icon ? icon + ' ' : ''}${l}</button>`).join('')}</div>`;
+}
+
+function regionRow(label, list, act, danger = false) {
+  return `<div class="small muted" style="margin:12px 0 6px">${label}</div>
+    <div class="chips">${Object.entries(REGIONS).map(([k, r]) => {
+      const on = list.includes(k);
+      return `<button class="chip ${on ? 'on' : ''}" data-act="${act}" data-v="${k}" style="${on && danger ? 'background:var(--danger);color:#fff' : ''}">${r.label}</button>`;
+    }).join('')}</div>`;
+}
+
+function checkinHtml() {
+  const c = checkin;
+  const body = showBody || c.sore.length || c.pain.length;
+  return `<div class="card">
+    <div class="row between"><b>Wie geht's dir heute?</b><span class="tiny faint">optional</span></div>
+    ${chipRow('Energie', ENERGY, c.energy, 'ci-energy')}
+    ${chipRow('Schlaf letzte Nacht', SLEEP, c.sleep, 'ci-sleep')}
+    ${body
+      ? regionRow('Muskelkater', c.sore, 'ci-sore') + regionRow('Schmerzen – wird heute gemieden', c.pain, 'ci-pain', true)
+      : '<button class="btn ghost sm block" data-act="ci-body" style="margin-top:12px">+ Muskelkater oder Schmerzen angeben</button>'}
+    ${chipRow('Wunsch für heute', WISHES, c.wish, 'ci-wish')}
+  </div>`;
+}
+
 function chooserHtml() {
   const hasKey = !!S.settings.ai.apiKey && S.settings.ai.enabled;
   return `
@@ -79,6 +112,7 @@ function chooserHtml() {
     </div>
     <div class="chips" style="justify-content:center">${[30, 45, 50, 60, 75].map((m) => `<button class="chip ${m === budget ? 'on' : ''}" data-act="set" data-m="${m}">${m}</button>`).join('')}</div>
   </div>
+  ${checkinHtml()}
   <button class="btn primary big block" data-act="plan" ${loading ? 'disabled' : ''}>
     ${loading ? '<span class="spinner"></span> Plan wird erstellt …' : hasKey ? 'Plan erstellen (KI)' : 'Plan erstellen'}
   </button>
@@ -157,6 +191,16 @@ export function render(root, route, app) {
     const p = plannedSession();
     if (act === 'minus' || act === 'plus') { budget = clamp(budget + (act === 'plus' ? 5 : -5), 15, 120); return render(root, route, app); }
     if (act === 'set') { budget = +el.dataset.m; return render(root, route, app); }
+    if (act === 'ci-energy') { checkin.energy = el.dataset.v; return render(root, route, app); }
+    if (act === 'ci-sleep') { checkin.sleep = el.dataset.v; return render(root, route, app); }
+    if (act === 'ci-wish') { checkin.wish = el.dataset.v; return render(root, route, app); }
+    if (act === 'ci-body') { showBody = true; return render(root, route, app); }
+    if (act === 'ci-sore' || act === 'ci-pain') {
+      const key = act === 'ci-sore' ? 'sore' : 'pain';
+      const v = el.dataset.v;
+      checkin[key] = checkin[key].includes(v) ? checkin[key].filter((x) => x !== v) : [...checkin[key], v];
+      return render(root, route, app);
+    }
     if (act === 'plan' || act === 'plan-local') return createPlan(act === 'plan', root, route, app);
     if (act === 'free') {
       const s = { id: uid(), date: new Date().toISOString(), status: 'active', budgetMin: budget, title: 'Freies Training', source: 'manual', items: [], startedAt: Date.now() };
@@ -233,10 +277,11 @@ async function createPlan(useAi, root, route, app) {
   loading = true;
   render(root, route, app);
   try {
-    const plan = await makePlan({ settings: S.settings, sessions: S.sessions, sets: S.sets, budgetMin: budget, useAi });
+    const ci = JSON.parse(JSON.stringify(checkin));
+    const plan = await makePlan({ settings: S.settings, sessions: S.sessions, sets: S.sets, budgetMin: budget, useAi, checkin: ci });
     const s = {
       id: uid(), date: new Date().toISOString(), status: 'planned', budgetMin: budget,
-      title: plan.title, rationale: plan.rationale, source: plan.source, items: plan.items,
+      title: plan.title, rationale: plan.rationale, source: plan.source, items: plan.items, checkin: ci,
       fallback: plan.fallbackReason ? `KI nicht verfügbar: ${plan.fallbackReason.message} Lokaler Plan erstellt.` : '',
     };
     await store.putSession(s);

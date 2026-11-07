@@ -59,6 +59,7 @@ function ensureDraft(sess, it) {
   } else {
     sug = suggestFirst({
       ex, item: it, bodyweight: bw, experience: S.settings.profile.experience,
+      baseline: S.settings.profile.baselines?.[it.exerciseId],
       prevSessions: prevSessionsFor(it.exerciseId, S.sets, { excludeSessionId: sess.id, bodyweight: bw }),
     });
     if (it.calibrating !== sug.calibrating) {

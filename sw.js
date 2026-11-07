@@ -1,14 +1,14 @@
 // Service Worker: speichert die App-Dateien, damit sie offline startet.
 // Bei jeder Änderung an der App VERSION erhöhen, damit Handys das Update laden.
-const VERSION = 'kc-v1';
+const VERSION = 'kc-v2';
 const FILES = [
   './', './index.html', './manifest.webmanifest', './css/app.css',
   './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png',
   './js/main.js', './js/util.js', './js/store.js', './js/ui.js', './js/timer.js',
-  './js/data/exercises.js',
+  './js/data/exercises.js', './js/data/goals.js',
   './js/logic/e1rm.js', './js/logic/progression.js', './js/logic/timing.js', './js/logic/history.js', './js/logic/planner.js', './js/logic/stats.js',
   './js/ai/gemini.js', './js/ai/plan.js', './js/ai/schema.js',
-  './js/views/today.js', './js/views/workout.js', './js/views/progress.js', './js/views/exercise.js', './js/views/settings.js', './js/views/picker.js', './js/views/chart.js',
+  './js/views/today.js', './js/views/workout.js', './js/views/progress.js', './js/views/exercise.js', './js/views/settings.js', './js/views/picker.js', './js/views/chart.js', './js/views/onboarding.js',
 ];
 
 self.addEventListener('install', (e) => {

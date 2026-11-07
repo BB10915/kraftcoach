@@ -2,10 +2,11 @@
 
 import * as store from '../store.js';
 import { S } from '../store.js';
-import { EQUIPMENT } from '../data/exercises.js';
+import { EQUIPMENT, getEx } from '../data/exercises.js';
+import { GOALS } from '../data/goals.js';
 import { testConnection, usageToday, AiError } from '../ai/gemini.js';
 import { toast, confirmSheet } from '../ui.js';
-import { esc, parseNum, dayKey } from '../util.js';
+import { esc, parseNum, dayKey, fmtNum } from '../util.js';
 
 const MODELS = [
   ['gemini-3.6-flash', 'Flash (Standard)'],
@@ -24,7 +25,9 @@ export function render(root, route, app) {
   <form data-form autocomplete="off">
     <h2>Profil</h2>
     <div class="card">
-      <label class="field"><span>Ziel</span><textarea name="goal" rows="2">${esc(p.goal)}</textarea></label>
+      <div class="small muted" style="margin-bottom:6px">Ziele</div>
+      ${GOALS.map(([k, l]) => `<label class="check"><input type="checkbox" name="goals" value="${k}" ${(p.goals ?? []).includes(k) ? 'checked' : ''}> ${esc(l)}</label>`).join('')}
+      <label class="field" style="margin-top:8px"><span>Ziel in eigenen Worten</span><textarea name="goal" rows="2">${esc(p.goal)}</textarea></label>
       <label class="field"><span>Erfahrung</span><select name="experience">
         ${[['anfaenger', 'Anfänger'], ['wiedereinsteiger', 'Wiedereinsteiger'], ['fortgeschritten', 'Fortgeschritten']].map(([v, l]) => `<option value="${v}" ${p.experience === v ? 'selected' : ''}>${l}</option>`).join('')}
       </select></label>
@@ -35,6 +38,12 @@ export function render(root, route, app) {
       <label class="field"><span>Hinweise / Einschränkungen für die KI</span><textarea name="notes" rows="2" placeholder="z. B. kein schweres Kreuzheben, Fokus Klimmzüge">${esc(p.notes)}</textarea></label>
       <div class="small muted" style="margin-bottom:6px">Ausrüstung</div>
       ${Object.entries(EQUIPMENT).map(([k, l]) => `<label class="check"><input type="checkbox" name="eq" value="${k}" ${p.equipment.includes(k) ? 'checked' : ''}> ${esc(l)}</label>`).join('')}
+      <div class="hr"></div>
+      <div class="small muted">Startwerte: ${Object.keys(p.baselines ?? {}).length ? Object.entries(p.baselines).map(([id, b]) => `${esc(getEx(id).name)} ${fmtNum(b.weight)} × ${b.reps}`).join(' · ') : 'keine angegeben'}</div>
+      <div class="btn-row" style="margin-top:10px">
+        <button type="button" class="btn sm" data-act="baselines">Startwerte ändern</button>
+        <button type="button" class="btn sm" data-act="onboarding">Einrichtung neu</button>
+      </div>
     </div>
 
     <h2>Training</h2>
@@ -90,6 +99,8 @@ export function render(root, route, app) {
     const el = e.target.closest('[data-act]');
     if (!el) return;
     const act = el.dataset.act;
+    if (act === 'baselines') { await saveForm(form); return app.go('#/start?schritt=3'); }
+    if (act === 'onboarding') { await saveForm(form); return app.go('#/start?schritt=0'); }
     if (act === 'toggle-key') { await saveForm(form); showKey = !showKey; return render(root, route, app); }
     if (act === 'model') { form.model.value = el.dataset.id; await saveForm(form); return render(root, route, app); }
     if (act === 'test') {
@@ -136,7 +147,8 @@ async function saveForm(form) {
   const f = new FormData(form);
   const st = JSON.parse(JSON.stringify(S.settings));
   const num = (k, d, lo, hi) => { const n = parseNum(f.get(k)); return n == null ? d : Math.min(hi, Math.max(lo, n)); };
-  st.profile.goal = String(f.get('goal') ?? '').trim() || st.profile.goal;
+  st.profile.goal = String(f.get('goal') ?? '').trim();
+  st.profile.goals = f.getAll('goals');
   st.profile.experience = f.get('experience');
   st.profile.daysPerWeek = String(f.get('daysPerWeek') ?? '').trim();
   st.profile.bodyweight = num('bodyweight', st.profile.bodyweight, 30, 250);

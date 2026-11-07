@@ -13,7 +13,11 @@ export const DEFAULT_SETTINGS = {
     notes: '', // Einschränkungen / Wünsche, z. B. "kein Kreuzheben"
     warmupMin: 5,
     finisher: true,
+    goals: ['kraft', 'fitness', 'beweglichkeit'], // siehe js/data/goals.js
+    // Selbst angegebene Startwerte: { exerciseId: { weight, reps, date } }
+    baselines: {},
   },
+  onboarded: false, // Einrichtung beim ersten Start erledigt?
   ai: {
     apiKey: '',
     model: 'gemini-3.6-flash',

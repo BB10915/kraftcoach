@@ -8,8 +8,10 @@ import * as workout from './views/workout.js';
 import * as progress from './views/progress.js';
 import * as exercise from './views/exercise.js';
 import * as settings from './views/settings.js';
+import * as onboarding from './views/onboarding.js';
 
 const ROUTES = {
+  start: onboarding,
   heute: today,
   training: workout,
   fortschritt: progress,
@@ -50,10 +52,16 @@ function renderTabbar(name) {
 
 function render() {
   const r = parseHash();
+  // Beim ersten Start zuerst die Einrichtung (außer ein Training läuft schon).
+  if (onboarding.needsOnboarding() && r.name !== 'start' && !store.activeSession()) {
+    location.replace('#/start');
+    return;
+  }
   const view = ROUTES[r.name];
   if (current && current !== view) current.leave?.();
   current = view;
-  renderTabbar(r.name);
+  if (r.name === 'start') $('#tabbar').innerHTML = '';
+  else renderTabbar(r.name);
   const root = $('#app');
   root.onclick = null;
   view.render(root, r, app);

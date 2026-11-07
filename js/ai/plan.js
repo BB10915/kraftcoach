@@ -8,6 +8,7 @@ import { setE1rm } from '../logic/e1rm.js';
 import { validate } from './schema.js';
 import { generateJson, AiError } from './gemini.js';
 import { fmtNum, clamp } from '../util.js';
+import { goalsText, checkinText, REGIONS } from '../data/goals.js';
 
 const H = 3600000;
 
@@ -56,13 +57,18 @@ Regeln:
 - Die Einheit muss ins Zeitbudget passen. Faustregel inkl. Aufbau und Aufwärmsätzen: Grundübung mit 3 Sätzen ≈ 10–12 Min, Isolationsübung mit 3 Sätzen ≈ 6 Min.
 - Aufwärmen (Beweglichkeit) ca. 5 Min passend zu den Übungen. Finisher = kurzer Konditionsblock (5–8 Min); bei weniger als 40 Min Budget minuten = 0.
 - Bewegungsmuster bei Hauptübungen gelegentlich variieren, aber bekannte Übungen für den Fortschritt öfter wiederholen.
+- Richte Wiederholungsbereiche, Volumen und Finisher an den ZIELEN aus (z. B. Stärker werden: Hauptübungen 4–6 Wdh.; Muskelaufbau: 6–12 Wdh.; Fitter werden/Fett abbauen: längerer Finisher; Beweglicher/Gesund: längeres Mobility-Aufwärmen).
+- TAGESFORM beachten: Bei niedriger Energie oder schlechtem Schlaf weniger Sätze und Ziel-RIR +1. Muskelkater-Bereiche nur leicht belasten. SCHMERZ-Bereiche komplett meiden. Bei guter Form darf es etwas mehr sein. Einen Wunsch (z. B. Fokus Oberkörper) umsetzen, wenn die Erholung es erlaubt.
+- Erwähne in der begruendung kurz, wie du Ziele und Tagesform berücksichtigt hast.
 - Schreibe auf Deutsch, Hinweise kurz (Technik, Tempo, Fokus).`;
 
 /** Kompakte Zusammenfassung der Historie für den Prompt (spart Tokens). */
-export function buildPrompt({ settings, sessions, sets, budgetMin, now = Date.now() }) {
+export function buildPrompt({ settings, sessions, sets, budgetMin, now = Date.now(), checkin = null }) {
   const p = settings.profile;
   const bw = p.bodyweight || 80;
-  const allowed = EXERCISES.filter((e) => p.equipment.includes(e.eq));
+  // Übungen für Schmerzbereiche gar nicht erst anbieten.
+  const painM = new Set((checkin?.pain ?? []).flatMap((r) => REGIONS[r]?.muscles ?? []));
+  const allowed = EXERCISES.filter((e) => p.equipment.includes(e.eq) && !e.primary.some((m) => painM.has(m)));
   const status = muscleStatus(sets, now);
   const done = sessions.filter((s) => s.status === 'done');
 
@@ -88,7 +94,11 @@ export function buildPrompt({ settings, sessions, sets, budgetMin, now = Date.no
     return `${id}: ${fmtNum(top.weight)} kg × ${top.reps} @RIR ${top.rir >= 4 ? '4+' : top.rir} (vor ${days} T.)`;
   }).filter(Boolean).join('\n') || 'noch keine';
 
-  const calib = done.length < 3
+  const baselines = Object.entries(p.baselines ?? {})
+    .map(([id, b]) => `${id}: ${fmtNum(b.weight)} kg × ${b.reps} (selbst angegeben, sauber geschafft)`)
+    .join('\n') || 'keine';
+
+  const calib = done.length < 3 && !Object.keys(p.baselines ?? {}).length
     ? `Kalibrierungsphase (${done.length} von 3 Einheiten): Startgewichte werden noch ermittelt. Bevorzuge gut dosierbare Grundübungen, Wdh. eher 8–12, Ziel-RIR 2–3.`
     : 'Kalibrierung abgeschlossen.';
 
@@ -97,13 +107,16 @@ export function buildPrompt({ settings, sessions, sets, budgetMin, now = Date.no
   const prompt = `ZEITBUDGET: ${budgetMin} Minuten (gesamt, inkl. Aufwärmen und Finisher)
 
 PROFIL
-Ziel: ${p.goal}
+Ziele: ${goalsText(p)}
 Erfahrung: ${p.experience}
 Training: ${p.daysPerWeek}× pro Woche
 Ausrüstung: ${p.equipment.map((e) => EQUIPMENT[e]).join(', ')}
 Hinweise/Einschränkungen: ${p.notes || 'keine'}
 ${calib}
 Einheiten in den letzten 7 Tagen: ${done.filter((s) => now - (s.startedAt ?? 0) < 7 * 24 * H).length}
+
+TAGESFORM (Check-in vor dem Training)
+${checkinText(checkin)}
 
 ERHOLUNG JE MUSKEL
 ${recovery}
@@ -113,6 +126,9 @@ ${last3}
 
 LETZTE LEISTUNGEN (Top-Satz)
 ${perf}
+
+STARTWERTE AUS DER EINRICHTUNG
+${baselines}
 
 KATALOG (id | Name | Muster | Hauptmuskeln)
 ${catalog}`;
@@ -159,10 +175,10 @@ export function convertPlan(raw, { settings, budgetMin, allowedIds, cardioIds })
  * Plan holen: erst KI, bei Fehlern lokaler Ersatzplan.
  * @returns {{title, rationale, items, source:'ai'|'local', fallbackReason?:AiError}}
  */
-export async function makePlan({ settings, sessions, sets, budgetMin, useAi = true }) {
-  const local = () => ({ ...planLocal({ settings, sets, budgetMin }), source: 'local' });
+export async function makePlan({ settings, sessions, sets, budgetMin, useAi = true, checkin = null }) {
+  const local = () => ({ ...planLocal({ settings, sets, budgetMin, checkin }), source: 'local' });
   if (!useAi || !settings.ai.enabled || !settings.ai.apiKey) return local();
-  const ctx = buildPrompt({ settings, sessions, sets, budgetMin });
+  const ctx = buildPrompt({ settings, sessions, sets, budgetMin, checkin });
   const schema = planSchema(ctx.allowedIds, ctx.cardioIds);
   let lastErr;
   for (let attempt = 0; attempt < 2; attempt++) {

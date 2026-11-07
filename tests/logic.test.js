@@ -212,3 +212,72 @@ import { sessionSec as secOf } from '../js/logic/timing.js';
   ok(bad === 0, 'Zufallstest Vorschläge gültig, Fehler: ' + bad);
   log(`${pass} Tests bestanden, ${fail} fehlgeschlagen (final)`);
 }
+
+// --- Einrichtung (Startwerte, Ziele) und Check-in
+{
+  // Startwert statt Kalibrierung
+  const sqx = EX['lh-kniebeuge'];
+  const it = { repsMin: 5, repsMax: 8, rir: 2 };
+  const b = suggestFirst({ ex: sqx, item: it, prevSessions: [], baseline: { weight: 100, reps: 5 } });
+  ok(!b.calibrating && b.weight >= 80 && b.weight <= 95 && b.reps >= 5 && b.reps <= 8, 'Startwert 100×5 → passender Einstieg: ' + JSON.stringify(b));
+  const kl = suggestFirst({ ex: EX['kg-klimmzug'], item: it, prevSessions: [], baseline: { weight: 0, reps: 10 } });
+  ok(kl.weight === 0 && kl.reps >= 5, 'Klimmzug-Startwert nur Körpergewicht: ' + JSON.stringify(kl));
+  const hist1 = suggestFirst({ ex: sqx, item: it, now, baseline: { weight: 100, reps: 5 }, prevSessions: [{ date: now - 2 * 86400000, sets: [{ weight: 60, reps: 8, rir: 2 }] }] });
+  ok(hist1.weight < 80, 'Echte Historie hat Vorrang vor Startwert: ' + hist1.weight);
+
+  // Ziele verändern Wiederholungsbereiche
+  const sK = JSON.parse(JSON.stringify(settings)); sK.profile.goals = ['kraft'];
+  const sM = JSON.parse(JSON.stringify(settings)); sM.profile.goals = ['muskel'];
+  ok(makeItem('lh-kniebeuge', sK).repsMax === 6, 'Ziel Kraft → 4–6 Wdh.');
+  ok(makeItem('lh-kniebeuge', sM).repsMax === 10, 'Ziel Muskelaufbau → 6–10 Wdh.');
+
+  // Check-in: Schmerzen Schulter → keine Schulterübungen
+  const pPain = planLocal({ settings, sets: [], budgetMin: 60, now, checkin: { energy: 'normal', sleep: 'okay', sore: [], pain: ['schultern'], wish: '' } });
+  ok(!pPain.items.some((i) => (EX[i.exerciseId].primary ?? []).includes('shoulders')), 'Schulterschmerz → keine Schulterübung');
+  ok(pPain.rationale.includes('Schmerz'), 'Begründung nennt Schmerzen');
+  // Müde → weniger Sätze
+  const tired = planLocal({ settings, sets: [], budgetMin: 50, now, checkin: { energy: 'niedrig', sleep: 'schlecht', sore: [], pain: [], wish: '' } });
+  const fresh = planLocal({ settings, sets: [], budgetMin: 50, now, checkin: { energy: 'hoch', sleep: 'gut', sore: [], pain: [], wish: '' } });
+  const setsOfPlan = (p) => p.items.filter((i) => i.kind === 'strength').reduce((a, i) => a + i.sets, 0);
+  ok(tired.items.filter((i) => i.kind === 'strength').every((i) => i.sets <= 3 && i.rir >= 2), 'Müde: max 3 Sätze, mehr RIR');
+  ok(!tired.items.some((i) => i.role === 'finisher'), 'Müde: kein Finisher');
+  ok(setsOfPlan(fresh) > setsOfPlan(tired), 'Fit: mehr Sätze als müde (' + setsOfPlan(fresh) + ' vs ' + setsOfPlan(tired) + ')');
+  ok(sessionSec(tired.items) <= 51 * 60 && sessionSec(fresh.items) <= 51 * 60, 'Beide im Budget');
+  // Wunsch Oberkörper
+  const upper = planLocal({ settings, sets: [], budgetMin: 50, now, checkin: { energy: 'normal', sleep: 'okay', sore: [], pain: [], wish: 'oberkoerper' } });
+  ok(!upper.items.some((i) => i.role === 'main' && PATTERNS_REGION(i) === 'lower'), 'Fokus Oberkörper: keine Bein-Hauptübung');
+
+  // Prompt enthält Ziele, Startwerte, Check-in; Schmerzübungen nicht im Katalog
+  const s2 = JSON.parse(JSON.stringify(settings));
+  s2.profile.goals = ['kraft', 'muskel']; s2.profile.baselines = { 'lh-bankdruecken': { weight: 80, reps: 6 } };
+  const ctx2 = buildPrompt({ settings: s2, sessions: [], sets: [], budgetMin: 50, now, checkin: { energy: 'niedrig', sleep: 'gut', sore: ['beine'], pain: ['schultern'], wish: 'locker' } });
+  ok(ctx2.prompt.includes('Stärker werden') && ctx2.prompt.includes('Muskelaufbau'), 'Prompt: Ziele');
+  ok(ctx2.prompt.includes('lh-bankdruecken: 80 kg × 6'), 'Prompt: Startwerte');
+  ok(ctx2.prompt.includes('Energie niedrig') && ctx2.prompt.includes('SCHMERZEN (meiden!): Schultern'), 'Prompt: Check-in');
+  ok(!ctx2.allowedIds.includes('lh-schulterdruecken') && !ctx2.allowedIds.includes('kh-seitheben'), 'Schulterübungen nicht erlaubt bei Schmerz');
+  log(`${pass} Tests bestanden, ${fail} fehlgeschlagen (mit Einrichtung & Check-in)`);
+}
+function PATTERNS_REGION(i) { return { squat: 'lower', hinge: 'lower', lunge: 'lower' }[EX[i.exerciseId].pattern] ?? 'other'; }
+
+// Hauptübungen für Beine, Drücken und Ziehen haben Vorrang
+{
+  const s3 = JSON.parse(JSON.stringify(settings));
+  for (const ci of [null, { energy: 'niedrig', sleep: 'okay', sore: [], pain: ['schultern'], wish: '' }]) {
+    for (const min of [45, 50, 60]) {
+      const pl = planLocal({ settings: s3, sets: [], budgetMin: min, now, checkin: ci });
+      const regions = new Set(pl.items.filter((i) => i.role === 'main').map((i) => ({ squat: 'lower', hinge: 'lower', hpush: 'push', vpush: 'push', hpull: 'pull', vpull: 'pull' })[EX[i.exerciseId].pattern]));
+      ok(regions.has('lower') && regions.has('push') && regions.has('pull'), `${min} Min${ci ? ' (müde, Schulter)' : ''}: Beine+Drücken+Ziehen → ${pl.items.map((i) => i.exerciseId).join(',')}`);
+      ok(sessionSec(pl.items) <= (min + 1) * 60, `${min} Min passt: ${(sessionSec(pl.items) / 60).toFixed(1)}`);
+    }
+  }
+  log(`${pass} Tests bestanden, ${fail} fehlgeschlagen (Hauptübungen-Vorrang)`);
+}
+
+// Startwert beeinflusst die Übungswahl
+{
+  const s4 = JSON.parse(JSON.stringify(settings));
+  s4.profile.baselines = { 'kz-latziehen': { weight: 70, reps: 10 } };
+  const pl = planLocal({ settings: s4, sets: [], budgetMin: 50, now });
+  ok(pl.items.some((i) => i.exerciseId === 'kz-latziehen' && i.role === 'main'), 'Latziehen mit Startwert wird Hauptübung: ' + pl.items.map((i) => i.exerciseId));
+  log(`${pass} Tests bestanden, ${fail} fehlgeschlagen (gesamt)`);
+}

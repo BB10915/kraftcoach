@@ -92,9 +92,19 @@ export function suggestNext({ ex, item, lastSet, bodyweight = 80, calibrating = 
  * Erster Satz einer Übung in dieser Einheit – aus der Historie (vorige Einheiten).
  * prevSessions = [{ sets:[{weight,reps,rir}], date }] neueste zuerst
  */
-export function suggestFirst({ ex, item, prevSessions = [], bodyweight = 80, experience = 'fortgeschritten', now = Date.now() }) {
+export function suggestFirst({ ex, item, prevSessions = [], bodyweight = 80, experience = 'fortgeschritten', now = Date.now(), baseline = null }) {
   const c = ctxOf(ex, item, bodyweight);
   const last = prevSessions.find((p) => p.sets.length);
+  if (!last && baseline?.reps > 0 && (baseline.weight > 0 || c.isBw)) {
+    // Selbst angegebener Startwert ("schaffe ich sauber" ≈ RIR 1), zur Sicherheit 8 % Abschlag.
+    const est = e1rm(effLoad(ex, baseline.weight, bodyweight), baseline.reps, 1) * 0.92;
+    const next = pick(est, c, null);
+    return {
+      ...next,
+      calibrating: false,
+      reason: `Aus deinem Startwert (${fmtNum(baseline.weight)} kg × ${baseline.reps}) – zum Einstieg etwas leichter`,
+    };
+  }
   if (!last) {
     const w = c.isBw ? 0 : Math.max(c.step, roundTo((ex.start || 10) * (EXP_FACTOR[experience] ?? 1), c.step));
     return {
