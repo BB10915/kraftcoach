@@ -369,3 +369,41 @@ import { parseHealth, parseLooseNumber, parseSleep, sleepChip } from '../js/logi
   ok(sleepChip(5.2) === 5 && sleepChip(6.6) === 7 && sleepChip(8.6) === 8 && sleepChip(9.5) === 9, 'Schlaf → Auswahl');
   log(`${pass} Tests bestanden, ${fail} fehlgeschlagen (Apple Health)`);
 }
+
+// ---------- Übungsanleitungen & Animationen ----------
+import { GUIDES, guideFor, guideAdvice, timesDone } from '../js/data/guides.js';
+import { ANIMS, solve, poseAt, frameSvg } from '../js/views/anim.js';
+import { EXERCISES } from '../js/data/exercises.js';
+{
+  const missing = EXERCISES.filter((e) => !GUIDES[e.id]).map((e) => e.id);
+  ok(missing.length === 0, 'Jede Übung hat eine Anleitung' + (missing.length ? ': fehlt ' + missing.join(', ') : ''));
+  const badAnim = Object.entries(GUIDES).filter(([, g]) => !ANIMS[g.anim]).map(([k]) => k);
+  ok(badAnim.length === 0, 'Jede Anleitung hat eine Animation' + (badAnim.length ? ': ' + badAnim.join(', ') : ''));
+  ok(Object.values(GUIDES).every((g) => g.steps.length >= 2 && [1, 2, 3].includes(g.level)), 'Anleitungen: mind. 2 Schritte, Stufe 1–3');
+  let bad = [];
+  for (const [k, a] of Object.entries(ANIMS)) {
+    for (const t of [0, 400, 900, 1500, 2600, 4000]) {
+      const pts = solve(poseAt(a, t));
+      const vals = Object.values(pts).flat();
+      if (!vals.every(Number.isFinite) || vals.some((v) => v < -40 || v > 240)) { bad.push(`${k}@${t}`); break; }
+    }
+    if (!frameSvg(a, a.frames[0]).includes('<polyline')) bad.push(k + ' svg');
+  }
+  ok(bad.length === 0, 'Alle Animationen ergeben gültige Posen' + (bad.length ? ': ' + bad.join(', ') : ''));
+  // Füße bleiben beim Kreuzheben stehen (Inverse Kinematik)
+  const dl = ANIMS.deadlift;
+  const a0 = solve(poseAt(dl, 0)).AL, a1 = solve(poseAt(dl, 1800)).AL;
+  ok(Math.abs(a0[0] - a1[0]) < 0.5 && Math.abs(a0[1] - a1[1]) < 0.5, 'Kreuzheben: Füße bleiben fest');
+
+  const sets = [{ exerciseId: 'lh-kniebeuge', sessionId: 'a' }, { exerciseId: 'lh-kniebeuge', sessionId: 'a' }, { exerciseId: 'lh-kniebeuge', sessionId: 'b' }];
+  ok(timesDone('lh-kniebeuge', sets) === 2, 'Anzahl Einheiten pro Übung');
+  ok(guideAdvice('lh-kreuzheben', { experience: 'fortgeschritten' }).suggest, 'Neue technische Übung → Anleitung vorschlagen');
+  ok(!guideAdvice('ma-beinstrecker', { experience: 'fortgeschritten' }).suggest, 'Fortgeschritten + neue einfache Maschine → kein Vorschlag');
+  ok(guideAdvice('ma-beinstrecker', { experience: 'anfaenger' }).suggest, 'Anfänger + neue Maschine → Vorschlag');
+  ok(guideAdvice('lh-kniebeuge', { experience: 'anfaenger', sets }).suggest, 'Anfänger, technisch, erst 2× gemacht → Vorschlag');
+  ok(!guideAdvice('lh-kniebeuge', { experience: 'fortgeschritten', sets }).suggest, 'Fortgeschritten, schon gemacht → kein Vorschlag');
+  ok(!guideAdvice('lh-kreuzheben', { known: ['lh-kreuzheben'] }).suggest, '„Kann ich“ → kein Vorschlag');
+  ok(!guideAdvice('lh-kreuzheben', { enabled: false }).suggest, 'Vorschläge ausgeschaltet');
+  ok(guideFor('unbekannt-xyz').steps.length === 1, 'Fallback für unbekannte Übung');
+  log(`${pass} Tests bestanden, ${fail} fehlgeschlagen (Anleitungen)`);
+}

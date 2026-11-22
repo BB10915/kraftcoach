@@ -9,6 +9,7 @@ import { projection, proposeCut, applyCut } from '../logic/timing.js';
 import { setE1rm } from '../logic/e1rm.js';
 import { makeItem } from '../logic/planner.js';
 import { openPicker } from './picker.js';
+import { openGuide, guideHintHtml, markKnown } from './guide.js';
 import { toast, confirmSheet, numberSheet, sheet, ICONS } from '../ui.js';
 import { beep, keepAwake } from '../timer.js';
 import { esc, uid, fmtNum, fmtClock, fmtMin, roundTo, clamp } from '../util.js';
@@ -134,8 +135,10 @@ function strengthCard(sess, it, dm) {
         <h2 class="ex-title">${esc(ex.name)}</h2>
         <div class="target">Satz <b>${n + 1}</b> von ${it.sets}${extra ? ' (Zusatz)' : ''} · ${it.repsMin}–${it.repsMax} Wdh. · Ziel-RIR ${it.rir} · Pause ${fmtClock(it.restSec)}</div>
       </div>
+      <button class="icon-btn" data-act="guide" data-id="${esc(it.exerciseId)}" aria-label="Anleitung zur Übung">${ICONS.info}</button>
       <button class="icon-btn" data-act="swap" aria-label="Übung tauschen">${ICONS.swap}</button>
     </div>
+    ${n === 0 ? guideHintHtml(it.exerciseId) : ''}
     ${it.note ? `<div class="pill-note" style="margin-top:10px">${esc(it.note)}</div>` : ''}
     <div class="reason ${d.calibrating ? 'calib' : ''}">${esc(d.reason || '')}${changed ? ' <span class="faint">(angepasst)</span>' : ''}</div>
     ${n === 0 ? `<div class="tiny faint" style="margin-bottom:6px">${esc(warmupHint(ex, d.weight))}</div>` : ''}
@@ -177,8 +180,12 @@ function timedCard(it) {
   const ex = getEx(it.exerciseId);
   return `<div class="card">
     <span class="badge ${it.role === 'warmup' ? 'info' : 'warn'}">${it.role === 'warmup' ? 'Aufwärmen / Beweglichkeit' : 'Kondition'}</span>
-    <h2 class="ex-title" style="margin-top:8px">${esc(ex.name)}</h2>
+    <div class="row between" style="align-items:flex-start;margin-top:8px">
+      <h2 class="ex-title grow">${esc(ex.name)}</h2>
+      <button class="icon-btn" data-act="guide" data-id="${esc(it.exerciseId)}" aria-label="Anleitung zur Übung">${ICONS.info}</button>
+    </div>
     <div class="target">${it.minutes} Minuten</div>
+    ${guideHintHtml(it.exerciseId)}
     ${it.text ? `<p style="margin:10px 0 0">${esc(it.text)}</p>` : ''}
     <div class="btn-row" style="margin-top:14px">
       <button class="btn" data-act="timed-start">Timer ${it.minutes}:00</button>
@@ -287,6 +294,8 @@ async function onAction(act, el, sess, cur, root, route, app) {
       return rerender();
     }
     case 'log': return logSet(sess, cur, +el.dataset.rir, rerender);
+    case 'guide': return openGuide(el.dataset.id, { onChange: rerender });
+    case 'guide-known': await markKnown(el.dataset.id); toast('Okay – wird nicht mehr vorgeschlagen'); return rerender();
     case 'rest-plus': if (sess.rest) { sess.rest.endAt = Math.max(Date.now(), sess.rest.endAt) + 30000; beeped = false; } return save();
     case 'rest-skip': sess.rest = null; return save();
     case 'timed-start': startRest(sess, cur.minutes * 60, getEx(cur.exerciseId).name); return save();

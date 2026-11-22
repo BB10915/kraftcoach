@@ -34,6 +34,8 @@ export const DEFAULT_SETTINGS = {
     sound: true,
     vibrate: true,
     wakeLock: true,
+    guideHints: true, // Anleitungen für neue/technische Übungen vorschlagen
+    guideKnown: [], // Übungen, bei denen „Kann ich schon“ getippt wurde
   },
 };
 

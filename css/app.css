@@ -232,3 +232,31 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); ou
 .kpis.four .kpi { background: var(--surface-2); padding: 10px 6px; text-align: center; }
 .kpis.four .kpi b { font-size: 17px; }
 .day-block li::marker { color: var(--accent); }
+
+/* Übungsanleitung / Animation */
+.anim { display: block; width: 100%; max-width: 280px; margin: 0 auto; aspect-ratio: 1; background: var(--surface-2); border-radius: var(--radius); cursor: pointer; }
+.anim .fig { fill: none; stroke: var(--text); stroke-width: 6; stroke-linecap: round; stroke-linejoin: round; }
+.anim .fig.torso { stroke-width: 8; }
+.anim .fig.far { stroke: var(--faint); }
+.anim .head { fill: var(--text); }
+.anim .ground { stroke: var(--line); stroke-width: 2; }
+.anim .fix { stroke: var(--surface-3); stroke-linecap: round; }
+.anim .fix-fill { fill: var(--surface-3); }
+.anim .cab { stroke: var(--faint); stroke-dasharray: 3 3; }
+.anim .eq { stroke: var(--accent); stroke-linecap: round; }
+.anim .eq-fill { fill: var(--accent); }
+.anim .eq-hub { fill: var(--accent-ink); }
+.anim.paused { opacity: .7; }
+.guide-steps { margin: 12px 0 0; padding-left: 22px; }
+.guide-steps li { margin: 6px 0; }
+.guide-steps li::marker { color: var(--accent); font-weight: 700; }
+.guide-tips { margin: 6px 0 0; padding-left: 0; list-style: none; }
+.guide-tips li { margin: 6px 0; padding-left: 22px; position: relative; }
+.guide-tips li::before { content: '⚠︎'; position: absolute; left: 0; color: var(--warn); }
+.guide-hint { background: var(--accent-soft); border: 1px solid rgba(182,242,90,.3); border-radius: var(--radius-sm); padding: 10px 12px; margin-top: 10px; }
+.badge-btn { border: 0; background: var(--accent-soft); color: var(--accent); font: inherit; font-size: 12px; font-weight: 700; border-radius: 999px; padding: 3px 9px; margin-left: 6px; vertical-align: 1px; cursor: pointer; }
+.anim .eye { fill: var(--surface-2); }
+.anim .fix { stroke: #4a515c; }
+.anim .fix-fill { fill: #3a404a; }
+.anim .body { fill: var(--muted); stroke: var(--muted); stroke-width: 6; stroke-linejoin: round; }
+.name-btn { border: 0; background: none; padding: 0; margin: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; }

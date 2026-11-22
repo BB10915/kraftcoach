@@ -32,7 +32,7 @@ Gleichnamige Dateien werden automatisch überschrieben → **Commit changes**.
 Nach 1–2 Minuten ist das Update online (Reiter **Actions** zeigt einen grünen Haken).
 
 Bei Änderungen am Code muss in `sw.js` oben die Zeile `const VERSION = 'kc-…';` hochgezählt sein
-(`kc-v4`, `kc-v5` …), damit das Handy die neue Version sicher lädt. Danach die App am Handy einmal
+(`kc-v5`, `kc-v6` …), damit das Handy die neue Version sicher lädt. Danach die App am Handy einmal
 ganz schließen (vom unteren Rand hochwischen) und neu öffnen.
 
 ---
@@ -101,6 +101,13 @@ iPhone-**Kurzbefehl** Ruhepuls, HRV, Schlaf, Gewicht und Schritte aus Health und
 **❤️ Werte aus Apple Health holen**: Die Werte landen im Check-in, das Gewicht im Profil. Die Schritt-für-Schritt-Anleitung
 für den Kurzbefehl steht in der App unter *Einstellungen → Apple Health*. Optional läuft der Kurzbefehl jeden Morgen automatisch.
 
+**Übungsanleitungen:** Zu jeder Übung gibt es eine kurze Anleitung mit **Animation** (Strichfigur mit Hantel/Gerät),
+den wichtigsten Schritten und typischen Fehlern. Die App schlägt sie von selbst vor (💡), wenn eine Übung **neu für dich** ist
+oder **technisch anspruchsvoll** (z. B. Kniebeuge, Kreuzheben) und du Anfänger/Wiedereinsteiger bist. Bei einfachen Maschinen
+und Fortgeschrittenen kommt kein Vorschlag. Öffnen: im Plan auf den Übungsnamen tippen, im Training auf ⓘ.
+„Kann ich schon“ blendet den Vorschlag für diese Übung aus; zurücksetzen oder ganz abschalten unter *Einstellungen → Training*.
+Die Animation stoppt per Antippen.
+
 **Heute:** Verfügbare Zeit wählen (Standard 50 Min) → **Plan erstellen**. Jede Übung zeigt die geschätzte Dauer.
 Mit ⇄ tauschst du eine Übung (z. B. Gerät belegt), mit ✕ entfernst du sie. Dann **Training starten**.
 
@@ -151,9 +158,10 @@ Dann im Browser <http://localhost:8123> öffnen. Mit `Ctrl + C` im Terminal wied
 | `js/data/exercises.js` | Übungskatalog (≈ 60 Übungen) – die KI darf nur diese wählen |
 | `js/data/goals.js` | Ziele, Check-in-Optionen, Tagesform-Bewertung, Startwert-Übungen |
 | `js/data/profile.js` | Erweitertes Profil (Körper, Ernährung, Tagesablauf …) |
+| `js/data/guides.js` | Übungsanleitungen (Schritte, Fehler, Schwierigkeit) und wann sie vorgeschlagen werden |
 | `js/logic/` | Rechenlogik: 1RM, Satzvorschläge, Zeitplanung, Erholung, lokaler Planer, Tages-Coach, Statistik |
 | `js/ai/` | Gemini-Anbindung, JSON-Schema-Prüfung, Prompt |
-| `js/views/` | Bildschirme: Heute, Training, Fortschritt, Übung, Einstellungen |
+| `js/views/` | Bildschirme: Heute, Training, Fortschritt, Übung, Einstellungen; `anim.js` = Übungsanimationen |
 | `js/store.js` | Speicherung im Browser (IndexedDB), Backup |
 | `sw.js`, `manifest.webmanifest` | Installation als App, Offline-Betrieb |
-| `tests/logic.test.js` | 128 automatische Tests |
+| `tests/logic.test.js` | 142 automatische Tests |

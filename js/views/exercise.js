@@ -6,6 +6,9 @@ import { seriesFor, bestsFor, computePRs } from '../logic/stats.js';
 import { prevSessionsFor } from '../logic/history.js';
 import { rirLabel } from '../logic/progression.js';
 import { lineChart, bindCharts } from './chart.js';
+import { openGuide } from './guide.js';
+import { guideFor, LEVEL_LABEL } from '../data/guides.js';
+import { animSvg, startAnims } from './anim.js';
 import { esc, fmtNum, fmtDate } from '../util.js';
 
 export function render(root, route, app) {
@@ -27,6 +30,11 @@ export function render(root, route, app) {
 
   root.innerHTML = `<div class="page-head"><div class="row"><a class="icon-btn" href="#/fortschritt" aria-label="Zurück">‹</a>
     <div><h1 style="font-size:22px">${esc(ex.name)}</h1><div class="sub">${ex.primary.map((m) => MUSCLES[m]).join(', ')}</div></div></div></div>
+  <div class="card row" style="gap:12px;align-items:center">
+    <div style="width:96px;flex:none">${animSvg(guideFor(id).anim, { label: ex.name })}</div>
+    <div class="grow"><div class="small muted">Technik: ${LEVEL_LABEL[guideFor(id).level]}</div>
+      <button class="btn sm" data-act="guide" style="margin-top:8px">Anleitung ansehen</button></div>
+  </div>
   <div class="kpis">
     <div class="kpi"><b class="num">${fmtNum(bests.e1, 0)}</b><span>bestes e1RM (${esc(unit)})</span></div>
     <div class="kpi"><b class="num">${bests.heavy ? `${fmtNum(bests.heavy.weight)}×${bests.heavy.reps}` : '–'}</b><span>schwerster Satz</span></div>
@@ -41,4 +49,8 @@ export function render(root, route, app) {
       <div class="meta num">${s.sets.map((x) => `${fmtNum(x.weight)}×${x.reps}${prs.has(x.id) ? ' 🏆' : ''} <span class="faint">(${rirLabel(x.rir)})</span>`).join(' · ')}</div>
     </div><span class="tiny muted">${fmtNum(s.best, 0)} e1RM</span></div>`).join('') || '<div class="empty small">Noch keine Sätze.</div>'}</div>`;
   bindCharts(root);
+  startAnims(root);
+  root.onclick = (ev) => {
+    if (ev.target.closest('[data-act="guide"]')) openGuide(id);
+  };
 }

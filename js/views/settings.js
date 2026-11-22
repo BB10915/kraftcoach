@@ -98,6 +98,8 @@ export function render(root, route, app) {
       <label class="check"><input type="checkbox" name="sound" ${t.sound ? 'checked' : ''}> Ton am Pausenende</label>
       <label class="check"><input type="checkbox" name="vibrate" ${t.vibrate ? 'checked' : ''}> Vibration (nur Android)</label>
       <label class="check"><input type="checkbox" name="wakeLock" ${t.wakeLock ? 'checked' : ''}> Bildschirm im Training anlassen</label>
+      <label class="check"><input type="checkbox" name="guideHints" ${t.guideHints !== false ? 'checked' : ''}> Anleitungen für neue oder technisch schwierige Übungen vorschlagen</label>
+      ${(t.guideKnown ?? []).length ? `<button type="button" class="btn sm ghost" data-act="guide-reset" style="margin-top:4px">„Kann ich“ zurücksetzen (${t.guideKnown.length} Übungen)</button>` : ''}
     </div>
 
     <h2>KI-Coach (Google Gemini)</h2>
@@ -146,6 +148,7 @@ export function render(root, route, app) {
       const h = parseHealth(text);
       return toast(h ? `Erkannt: ${healthText(h)}` : 'In der Zwischenablage sind keine Health-Werte. Zuerst den Kurzbefehl starten.', h ? '' : 'err');
     }
+    if (act === 'guide-reset') { await saveForm(form); S.settings.training.guideKnown = []; await store.saveSettings(); toast('Anleitungen werden wieder vorgeschlagen'); return render(root, route, app); }
     if (act === 'toggle-key') { await saveForm(form); showKey = !showKey; return render(root, route, app); }
     if (act === 'model') { form.model.value = el.dataset.id; await saveForm(form); return render(root, route, app); }
     if (act === 'test') {
@@ -200,6 +203,7 @@ async function saveForm(form) {
   st.training.sound = f.get('sound') === 'on';
   st.training.vibrate = f.get('vibrate') === 'on';
   st.training.wakeLock = f.get('wakeLock') === 'on';
+  st.training.guideHints = f.get('guideHints') === 'on';
   st.ai.enabled = f.get('aiEnabled') === 'on';
   st.ai.apiKey = String(f.get('apiKey') ?? '').trim();
   st.ai.model = String(f.get('model') ?? '').trim() || 'gemini-3.6-flash';

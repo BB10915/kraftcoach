@@ -11,6 +11,7 @@ import { ENERGY, SLEEP, SLEEP_H, STRESS, LAST_MEAL, ATE, LOADS, REGIONS, WISHES,
 import { planDay, fmtL } from '../logic/daycoach.js';
 import { parseHealth, sleepChip, healthText } from '../logic/health.js';
 import { openPicker } from './picker.js';
+import { openGuide, adviceFor } from './guide.js';
 import { toast, confirmSheet, sheet, ICONS } from '../ui.js';
 import { esc, uid, fmtDate, fmtMin, fmtNum, relDays, clamp } from '../util.js';
 
@@ -90,12 +91,14 @@ function planHtml(p) {
     </div>
   </div>
   <div class="card">
+    ${p.items.some((it) => adviceFor(it.exerciseId).suggest) ? '<div class="small muted" style="margin-bottom:6px">💡 Bei markierten Übungen lohnt sich ein kurzer Blick in die Anleitung. Jeder Übungsname öffnet seine Anleitung.</div>' : ''}
     ${p.items.map((it, i) => {
       const ex = getEx(it.exerciseId);
+      const adv = adviceFor(it.exerciseId);
       return `<div class="plan-item">
         <div class="idx">${i + 1}</div>
         <div class="grow">
-          <div class="name">${roleBadge(it)}${esc(ex.name)}</div>
+          <div class="name">${roleBadge(it)}<button class="name-btn" data-act="guide" data-id="${esc(it.exerciseId)}" aria-label="${esc(ex.name)} – Anleitung öffnen">${esc(ex.name)} <span class="faint" aria-hidden="true">ⓘ</span></button>${adv.suggest ? `<button class="badge-btn" data-act="guide" data-id="${esc(it.exerciseId)}">💡 Anleitung</button>` : ''}</div>
           <div class="meta">${itemMeta(it)}</div>
           ${it.note ? `<div class="tiny faint" style="margin-top:2px">${esc(it.note)}</div>` : ''}
         </div>
@@ -385,6 +388,7 @@ export function render(root, route, app) {
       await store.putSession(p);
       return render(root, route, app);
     }
+    if (act === 'guide') return openGuide(el.dataset.id, { onChange: () => render(root, route, app) });
     if (act === 'swap') {
       const it = p.items.find((i) => i.uid === el.dataset.uid);
       const used = p.items.map((i) => i.exerciseId);
