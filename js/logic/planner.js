@@ -91,6 +91,7 @@ const musclesOf = (regions = []) => new Set(regions.flatMap((r) => REGIONS[r]?.m
  */
 export function planLocal({ settings, sets, budgetMin, now = Date.now(), checkin = null }) {
   const profile = settings.profile;
+  if (checkin?.wish === 'regen') return planRecovery({ settings, sets, budgetMin });
   const goals = profile.goals ?? [];
   const painM = musclesOf(checkin?.pain);
   const soreM = musclesOf(checkin?.sore);
@@ -105,8 +106,10 @@ export function planLocal({ settings, sets, budgetMin, now = Date.now(), checkin
     if (sc[p] == null) continue;
     if (checkin?.wish === 'oberkoerper' && def.region === 'lower') sc[p] *= 0.2;
     if (checkin?.wish === 'unterkoerper' && (def.region === 'push' || def.region === 'pull')) sc[p] *= 0.4;
+    // Priorisierte Muskelgruppen aus dem Profil etwas bevorzugen
+    if (def.muscles?.some((m) => profile.aims?.priority?.includes(m))) sc[p] *= 1.25;
   }
-  const fatigue = fatigueLevel(checkin);
+  const fatigue = fatigueLevel(checkin, profile);
   const lastUsed = lastUsedMap(sets);
   const known = new Set(Object.keys(profile.baselines ?? {}));
   const budgetSec = budgetMin * 60;
@@ -201,4 +204,31 @@ export function titleFor(items) {
   if (regions.has('push')) return 'Drücken';
   if (regions.has('pull')) return 'Ziehen';
   return 'Training';
+}
+
+/** Regenerationstag: lockeres Ausdauertraining + Mobility, keine schweren Sätze. */
+export function planRecovery({ settings, sets = [], budgetMin }) {
+  const eq = settings.profile.equipment;
+  const lastUsed = lastUsedMap(sets);
+  const cardio = ['c-laufband', 'c-ergometer', 'c-rudergeraet'].map(getEx).filter((e) => eq.includes(e.eq))
+    .sort((a, b) => (lastUsed.get(a.id) ?? 0) - (lastUsed.get(b.id) ?? 0))[0];
+  const B = Math.max(15, budgetMin);
+  const items = [makeItem('m-aufwaermen', settings, { role: 'warmup', minutes: 5 })];
+  let left = B - 5;
+  if (cardio) {
+    const m = Math.max(10, Math.round(B * 0.4));
+    items.push(makeItem(cardio.id, settings, { role: 'finisher', minutes: m, text: 'Locker (Zone 2): Puls ca. 120–135, du kannst dabei noch reden' }));
+    left -= m + 1;
+  }
+  for (const id of ['m-huefte', 'm-schulter']) {
+    if (left < 8) break;
+    items.push(makeItem(id, settings, { role: 'warmup', minutes: 6 }));
+    left -= 7;
+  }
+  if (left >= 4) items.push(makeItem('m-cooldown', settings, { role: 'warmup', minutes: Math.min(10, left) }));
+  return {
+    title: 'Regeneration',
+    rationale: 'Regenerationstag: lockere Ausdauer fördert die Durchblutung, Mobility löst Verspannungen. Keine schweren Sätze – morgen bist du wieder voll leistungsfähig.',
+    items: fitToBudget(items, budgetMin * 60),
+  };
 }

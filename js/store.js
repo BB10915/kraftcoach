@@ -1,5 +1,7 @@
 // Datenhaltung: IndexedDB im Browser + In-Memory-Kopie für schnelle Berechnungen.
 
+import { PROFILE_DEFAULTS } from './data/profile.js';
+
 const DB_NAME = 'kraftcoach';
 const DB_VERSION = 1;
 
@@ -16,6 +18,8 @@ export const DEFAULT_SETTINGS = {
     goals: ['kraft', 'fitness', 'beweglichkeit'], // siehe js/data/goals.js
     // Selbst angegebene Startwerte: { exerciseId: { weight, reps, date } }
     baselines: {},
+    // Erweiterte Angaben: body, aims, hist, nutrition, day, cond (siehe js/data/profile.js)
+    ...JSON.parse(JSON.stringify(PROFILE_DEFAULTS)),
   },
   onboarded: false, // Einrichtung beim ersten Start erledigt?
   ai: {

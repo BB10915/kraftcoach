@@ -32,7 +32,7 @@ Gleichnamige Dateien werden automatisch überschrieben → **Commit changes**.
 Nach 1–2 Minuten ist das Update online (Reiter **Actions** zeigt einen grünen Haken).
 
 Bei Änderungen am Code muss in `sw.js` oben die Zeile `const VERSION = 'kc-…';` hochgezählt sein
-(`kc-v2`, `kc-v3` …), damit das Handy die neue Version sicher lädt. Danach die App am Handy einmal
+(`kc-v4`, `kc-v5` …), damit das Handy die neue Version sicher lädt. Danach die App am Handy einmal
 ganz schließen (vom unteren Rand hochwischen) und neu öffnen.
 
 ---
@@ -71,15 +71,35 @@ Danach startet KraftCoach wie eine normale App, im Vollbild und auch offline.
 
 ## 4. So benutzt du die App
 
-**Erster Start:** Eine kurze Einrichtung fragt nach deinen Zielen, Erfahrung, Trainingstagen, Körpergewicht
-und deinen **aktuellen Werten** (Gewicht × Wiederholungen, die du sauber schaffst) bei den wichtigsten Übungen.
-Mit diesen Startwerten schlägt die App sofort passende Gewichte vor (zur Sicherheit etwas leichter);
-Übungen ohne Startwert kalibriert sie vorsichtig. Alles später änderbar unter
-*Einstellungen → Startwerte ändern / Einrichtung neu*.
+**Erster Start:** Die Einrichtung fragt in 7 kurzen Schritten (vieles optional):
+1. **Ziele**: Hauptziele, Leistungsziele (z. B. 100 kg Bankdrücken), wichtige Muskelgruppen, kurz- und langfristige Ziele.
+2. **Körper**: Alter, Geschlecht, Größe, Gewicht, Körperfett und Muskelmasse (falls bekannt), Fitness, normaler Ruhepuls/HRV, Beschwerden.
+3. **Training**: Erfahrung, Trainingsjahre, Tage pro Woche, Dauer, Split, weitere Sportarten, Studio/Homegym, allein/Partner, Intensität, Equipment.
+4. **Deine Werte**: Gewicht × Wiederholungen bei den wichtigsten Übungen. Damit schlägt die App sofort passende Gewichte vor.
+5. **Ernährung**: Kalorien, Makros, Mahlzeiten, Wasser, Ernährungsform, Unverträglichkeiten, Supplements.
+6. **Tagesablauf**: Aufstehen, Schlafen, Schule/Arbeit, Alltagsaktivität, Trainingszeit, Weg zum Gym, Essensmöglichkeiten, Verpflichtungen.
+7. **KI-Schlüssel** (optional).
+
+Jeder Bereich lässt sich später unter *Einstellungen → Profil* einzeln bearbeiten.
 
 **Check-in:** Vor dem Plan fragt „Wie geht's dir heute?“ nach Energie, Schlaf, Muskelkater, Schmerzen
-und einem Wunsch (z. B. Fokus Oberkörper). Bei niedriger Tagesform plant die App weniger Sätze,
-mehr Reserve und etwas kürzer; Schmerzbereiche werden komplett gemieden. Alles optional.
+und einem Wunsch (z. B. Fokus Oberkörper oder *Nur Regeneration*). Unter **Mehr Angaben** kommen Schlafdauer,
+Stress, Ruhepuls, HRV, letzte Mahlzeit, bisher gegessen, heutige Belastung und die Trainingsuhrzeit dazu.
+Daraus berechnet die App live eine **Einschätzung**: *Volle Leistung*, *Normal*, *Volumen reduzieren* oder
+*Lieber regenerieren*. Bei „Lieber regenerieren“ bietet der Plan einen **Regenerationstag** an
+(lockeres Cardio + Mobility). Schmerzbereiche werden komplett gemieden.
+
+**Dein Tag:** Unter dem Plan steht der ganze Tag: Morgenroutine, Essen vor dem Training, Training,
+Essen und Trinken danach, Abendroutine mit Schlafenszeit. Oben stehen das Tagesziel für Kalorien, Protein, Kohlenhydrate
+und Wasser. Uhrzeiten richten sich nach deinem Tagesablauf (Trainingszeit im Check-in änderbar), Essensbeispiele nach
+deiner Ernährungsform, Supplements und Koffein nach deinen Angaben (unter 18: kein Koffein, kein großes Kaloriendefizit).
+Mit KI-Schlüssel schreibt die KI die Tipps individuell, in **derselben Anfrage** wie den Trainingsplan, also ohne Mehrverbrauch.
+Es sind allgemeine Empfehlungen, keine medizinische oder Ernährungsberatung.
+
+**Apple Health:** Web-Apps dürfen Apple Health nicht direkt lesen (nur App-Store-Apps). Deshalb holt ein
+iPhone-**Kurzbefehl** Ruhepuls, HRV, Schlaf, Gewicht und Schritte aus Health und kopiert sie. Im Check-in tippst du auf
+**❤️ Werte aus Apple Health holen**: Die Werte landen im Check-in, das Gewicht im Profil. Die Schritt-für-Schritt-Anleitung
+für den Kurzbefehl steht in der App unter *Einstellungen → Apple Health*. Optional läuft der Kurzbefehl jeden Morgen automatisch.
 
 **Heute:** Verfügbare Zeit wählen (Standard 50 Min) → **Plan erstellen**. Jede Übung zeigt die geschätzte Dauer.
 Mit ⇄ tauschst du eine Übung (z. B. Gerät belegt), mit ✕ entfernst du sie. Dann **Training starten**.
@@ -129,10 +149,11 @@ Dann im Browser <http://localhost:8123> öffnen. Mit `Ctrl + C` im Terminal wied
 |---|---|
 | `index.html`, `css/app.css` | Grundgerüst und Design (Dark Mode, große Tasten) |
 | `js/data/exercises.js` | Übungskatalog (≈ 60 Übungen) – die KI darf nur diese wählen |
-| `js/data/goals.js` | Ziele, Check-in-Optionen, Startwert-Übungen |
-| `js/logic/` | Rechenlogik: 1RM, Satzvorschläge, Zeitplanung, Erholung, lokaler Planer, Statistik |
+| `js/data/goals.js` | Ziele, Check-in-Optionen, Tagesform-Bewertung, Startwert-Übungen |
+| `js/data/profile.js` | Erweitertes Profil (Körper, Ernährung, Tagesablauf …) |
+| `js/logic/` | Rechenlogik: 1RM, Satzvorschläge, Zeitplanung, Erholung, lokaler Planer, Tages-Coach, Statistik |
 | `js/ai/` | Gemini-Anbindung, JSON-Schema-Prüfung, Prompt |
 | `js/views/` | Bildschirme: Heute, Training, Fortschritt, Übung, Einstellungen |
 | `js/store.js` | Speicherung im Browser (IndexedDB), Backup |
 | `sw.js`, `manifest.webmanifest` | Installation als App, Offline-Betrieb |
-| `tests/logic.test.js` | 93 automatische Tests |
+| `tests/logic.test.js` | 128 automatische Tests |

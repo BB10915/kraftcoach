@@ -2,8 +2,11 @@
 
 import * as store from '../store.js';
 import { S } from '../store.js';
-import { EQUIPMENT, getEx } from '../data/exercises.js';
-import { GOALS } from '../data/goals.js';
+import { EQUIPMENT, MUSCLES, getEx } from '../data/exercises.js';
+import { goalsText } from '../data/goals.js';
+import { SEX, OCCUPATION, PLACE, INTENSITY, DIETS } from '../data/profile.js';
+import { STEP } from './onboarding.js';
+import { parseHealth, healthText } from '../logic/health.js';
 import { testConnection, usageToday, AiError } from '../ai/gemini.js';
 import { toast, confirmSheet } from '../ui.js';
 import { esc, parseNum, dayKey, fmtNum } from '../util.js';
@@ -14,6 +17,48 @@ const MODELS = [
 ];
 
 let showKey = false;
+let showHealth = false;
+
+const lbl = (list, k) => list.find(([v]) => v === k)?.[1] ?? '';
+const has = (v) => v != null && v !== '';
+
+function healthGuide() {
+  const code = (t) => `<code style="background:var(--surface-2);padding:1px 5px;border-radius:5px">${t}</code>`;
+  return `<ol class="small" style="padding-left:20px;margin:14px 0 0;line-height:1.5">
+    <li>App <b>Kurzbefehle</b> öffnen → <b>+</b> (neuer Kurzbefehl) → oben als Namen ${code('KraftCoach Health')} eingeben.</li>
+    <li><b>Aktion hinzufügen</b> → in der Suche ${code('Health')} eingeben → <b>Health-Samples suchen</b> (engl. „Find Health Samples“) wählen.<br>
+      Einstellen: Typ <b>Ruheherzfrequenz</b>, Sortieren nach <b>Startdatum</b>, Reihenfolge <b>Neueste zuerst</b>, <b>Begrenzen</b> an, <b>1</b> Sample.</li>
+    <li>Dasselbe noch einmal für <b>Herzfrequenzvariabilität</b> und für <b>Gewicht</b> (je neueste 1).</li>
+    <li><b>Schritte:</b> wieder „Health-Samples suchen“, Typ <b>Schritte</b>, Filter <b>Startdatum ist heute</b>. Danach Aktion <b>Statistik berechnen</b> → <b>Summe</b>.</li>
+    <li><b>Schlaf</b> (braucht Apple Watch o. ä.): „Health-Samples suchen“, Typ <b>Schlafanalyse</b>, Filter <b>Startdatum ist in den letzten 1 Tagen</b> und <b>Wert ist Schlafend</b> (bzw. Kern/Tief/REM). Dann <b>Details von Health-Samples abrufen</b> → <b>Dauer</b>, dann <b>Statistik berechnen</b> → <b>Summe</b>.</li>
+    <li>Aktion <b>Text</b> hinzufügen und so ausfüllen – statt der Wörter in Klammern jeweils über der Tastatur die passende Variable (blaue Blase) antippen:
+      <pre style="background:var(--surface-2);padding:10px;border-radius:10px;white-space:pre-wrap;margin:6px 0">KraftCoach Health
+ruhepuls: [Ruheherzfrequenz]
+hrv: [Herzfrequenzvariabilität]
+schlaf: [Statistik Schlaf]
+gewicht: [Gewicht]
+schritte: [Statistik Schritte]</pre></li>
+    <li>Letzte Aktion: <b>In Zwischenablage kopieren</b>. Fertig → oben <b>OK</b>.</li>
+    <li>Beim ersten Start fragt das iPhone, ob der Kurzbefehl Health lesen darf → <b>Erlauben</b>.</li>
+    <li><b>Benutzen:</b> Kurzbefehl starten (z. B. per Widget auf dem Home-Bildschirm), dann KraftCoach öffnen → Check-in → ❤️. Beim ersten Mal fragt das iPhone „Einsetzen erlauben?“ → <b>Einsetzen</b>.</li>
+    <li><b>Automatisch jeden Morgen (optional):</b> Kurzbefehle → <b>Automation</b> → <b>+</b> → <b>Tageszeit</b> (z. B. 07:00) → <b>Sofort ausführen</b> → Kurzbefehl „KraftCoach Health“.</li>
+  </ol>
+  <p class="tiny faint" style="margin:8px 0 0">Die Namen der Aktionen können je nach iOS-Version leicht abweichen. Fehlt ein Wert (z. B. HRV ohne Uhr), die Zeile einfach weglassen – die App nimmt, was da ist.</p>`;
+}
+
+/** Kurze Zusammenfassung je Profilbereich. */
+function profileRows(p) {
+  const b = p.body ?? {}, n = p.nutrition ?? {}, d = p.day ?? {}, c = p.cond ?? {};
+  const bl = Object.entries(p.baselines ?? {});
+  return [
+    ['ziele', 'Ziele', [goalsText(p), p.aims?.perf, p.aims?.priority?.length && `Fokus: ${p.aims.priority.map((m) => MUSCLES[m]).join(', ')}`].filter(Boolean).join(' · ') || 'keine angegeben'],
+    ['koerper', 'Körper', [has(b.age) && `${b.age} J.`, lbl(SEX, b.sex), has(b.heightCm) && `${b.heightCm} cm`, `${fmtNum(p.bodyweight)} kg`, has(b.bodyfat) && `${fmtNum(b.bodyfat)} % KFA`, p.notes && `Hinweis: ${p.notes}`].filter(Boolean).join(' · ')],
+    ['training', 'Training & Bedingungen', [p.experience, `${p.daysPerWeek}×/Woche`, lbl(PLACE, c.place), lbl(INTENSITY, c.intensity), p.equipment.map((e) => EQUIPMENT[e]).join(', ')].filter(Boolean).join(' · ')],
+    ['werte', 'Startwerte', bl.length ? bl.map(([id, x]) => `${getEx(id).name} ${fmtNum(x.weight)} × ${x.reps}`).join(' · ') : 'keine angegeben'],
+    ['ernaehrung', 'Ernährung', [has(n.kcal) && `${n.kcal} kcal`, has(n.protein) && `${n.protein} g Protein`, `${n.meals ?? 3} Mahlzeiten`, n.diet?.map((k) => lbl(DIETS, k)).join(', '), n.supps?.length && `${n.supps.length} Supplements`].filter(Boolean).join(' · ')],
+    ['tag', 'Tagesablauf', [`auf ${d.wake}`, `Training ${d.trainTime}`, `Bett ${d.bed}`, lbl(OCCUPATION, d.occupation), has(d.commuteMin) && `${d.commuteMin} Min Weg`].filter(Boolean).join(' · ')],
+  ];
+}
 
 export function render(root, route, app) {
   const st = S.settings;
@@ -24,26 +69,19 @@ export function render(root, route, app) {
   root.innerHTML = `<div class="page-head"><h1>Einstellungen</h1></div>
   <form data-form autocomplete="off">
     <h2>Profil</h2>
+    <div class="card tight">
+      ${profileRows(p).map(([k, title, text]) => `<button type="button" class="list-btn" data-act="edit" data-step="${k}">
+        <div class="grow" style="min-width:0"><div style="font-weight:600">${title}</div><div class="tiny muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(text)}</div></div>
+        <span class="muted">›</span></button>`).join('')}
+      <button type="button" class="btn ghost block sm" data-act="onboarding" style="margin-top:6px">Einrichtung komplett neu</button>
+    </div>
+
+    <h2>Apple Health</h2>
     <div class="card">
-      <div class="small muted" style="margin-bottom:6px">Ziele</div>
-      ${GOALS.map(([k, l]) => `<label class="check"><input type="checkbox" name="goals" value="${k}" ${(p.goals ?? []).includes(k) ? 'checked' : ''}> ${esc(l)}</label>`).join('')}
-      <label class="field" style="margin-top:8px"><span>Ziel in eigenen Worten</span><textarea name="goal" rows="2">${esc(p.goal)}</textarea></label>
-      <label class="field"><span>Erfahrung</span><select name="experience">
-        ${[['anfaenger', 'Anfänger'], ['wiedereinsteiger', 'Wiedereinsteiger'], ['fortgeschritten', 'Fortgeschritten']].map(([v, l]) => `<option value="${v}" ${p.experience === v ? 'selected' : ''}>${l}</option>`).join('')}
-      </select></label>
-      <div class="row">
-        <label class="field grow"><span>Einheiten pro Woche</span><input type="text" name="daysPerWeek" value="${esc(p.daysPerWeek)}"></label>
-        <label class="field grow"><span>Körpergewicht (kg)</span><input type="text" inputmode="decimal" name="bodyweight" value="${esc(String(p.bodyweight).replace('.', ','))}"></label>
-      </div>
-      <label class="field"><span>Hinweise / Einschränkungen für die KI</span><textarea name="notes" rows="2" placeholder="z. B. kein schweres Kreuzheben, Fokus Klimmzüge">${esc(p.notes)}</textarea></label>
-      <div class="small muted" style="margin-bottom:6px">Ausrüstung</div>
-      ${Object.entries(EQUIPMENT).map(([k, l]) => `<label class="check"><input type="checkbox" name="eq" value="${k}" ${p.equipment.includes(k) ? 'checked' : ''}> ${esc(l)}</label>`).join('')}
-      <div class="hr"></div>
-      <div class="small muted">Startwerte: ${Object.keys(p.baselines ?? {}).length ? Object.entries(p.baselines).map(([id, b]) => `${esc(getEx(id).name)} ${fmtNum(b.weight)} × ${b.reps}`).join(' · ') : 'keine angegeben'}</div>
-      <div class="btn-row" style="margin-top:10px">
-        <button type="button" class="btn sm" data-act="baselines">Startwerte ändern</button>
-        <button type="button" class="btn sm" data-act="onboarding">Einrichtung neu</button>
-      </div>
+      <p class="small" style="margin-top:0">Web-Apps dürfen Apple Health nicht direkt lesen – das erlaubt Apple nur Apps aus dem App Store. Der Umweg: Ein <b>Kurzbefehl</b> holt Ruhepuls, HRV, Schlaf, Gewicht und Schritte aus Health und kopiert sie. Im Check-in tippst du dann auf <b>❤️ Werte aus Apple Health holen</b>.</p>
+      <button type="button" class="btn sm block" data-act="health-guide">${showHealth ? 'Anleitung ausblenden' : 'Kurzbefehl einrichten – Anleitung'}</button>
+      ${showHealth ? healthGuide() : ''}
+      <button type="button" class="btn ghost sm block" data-act="health-test" style="margin-top:8px">Zwischenablage testen</button>
     </div>
 
     <h2>Training</h2>
@@ -99,8 +137,15 @@ export function render(root, route, app) {
     const el = e.target.closest('[data-act]');
     if (!el) return;
     const act = el.dataset.act;
-    if (act === 'baselines') { await saveForm(form); return app.go('#/start?schritt=3'); }
+    if (act === 'edit') { await saveForm(form); return app.go(`#/start?schritt=${STEP[el.dataset.step]}&einzeln=1`); }
     if (act === 'onboarding') { await saveForm(form); return app.go('#/start?schritt=0'); }
+    if (act === 'health-guide') { await saveForm(form); showHealth = !showHealth; return render(root, route, app); }
+    if (act === 'health-test') {
+      let text = '';
+      try { text = await navigator.clipboard.readText(); } catch { return toast('Zugriff auf die Zwischenablage nicht erlaubt.', 'err'); }
+      const h = parseHealth(text);
+      return toast(h ? `Erkannt: ${healthText(h)}` : 'In der Zwischenablage sind keine Health-Werte. Zuerst den Kurzbefehl starten.', h ? '' : 'err');
+    }
     if (act === 'toggle-key') { await saveForm(form); showKey = !showKey; return render(root, route, app); }
     if (act === 'model') { form.model.value = el.dataset.id; await saveForm(form); return render(root, route, app); }
     if (act === 'test') {
@@ -147,14 +192,6 @@ async function saveForm(form) {
   const f = new FormData(form);
   const st = JSON.parse(JSON.stringify(S.settings));
   const num = (k, d, lo, hi) => { const n = parseNum(f.get(k)); return n == null ? d : Math.min(hi, Math.max(lo, n)); };
-  st.profile.goal = String(f.get('goal') ?? '').trim();
-  st.profile.goals = f.getAll('goals');
-  st.profile.experience = f.get('experience');
-  st.profile.daysPerWeek = String(f.get('daysPerWeek') ?? '').trim();
-  st.profile.bodyweight = num('bodyweight', st.profile.bodyweight, 30, 250);
-  st.profile.notes = String(f.get('notes') ?? '').trim();
-  st.profile.equipment = f.getAll('eq');
-  if (!st.profile.equipment.length) st.profile.equipment = ['kg'];
   st.profile.warmupMin = Math.round(num('warmupMin', 5, 0, 15));
   st.profile.finisher = f.get('finisher') === 'on';
   st.training.defaultMin = Math.round(num('defaultMin', 50, 15, 120));

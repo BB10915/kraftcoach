@@ -281,3 +281,91 @@ function PATTERNS_REGION(i) { return { squat: 'lower', hinge: 'lower', lunge: 'l
   ok(pl.items.some((i) => i.exerciseId === 'kz-latziehen' && i.role === 'main'), 'Latziehen mit Startwert wird Hauptübung: ' + pl.items.map((i) => i.exerciseId));
   log(`${pass} Tests bestanden, ${fail} fehlgeschlagen (gesamt)`);
 }
+
+// ---------- Erweitertes Profil, Tagesform, Tagesplan ----------
+import { readiness, fatigueLevel as fl } from '../js/data/goals.js';
+import { nutritionTargets, planDay, bmr, toMin } from '../js/logic/daycoach.js';
+import { profileText } from '../js/data/profile.js';
+import { planRecovery } from '../js/logic/planner.js';
+{
+  const s5 = JSON.parse(JSON.stringify(settings));
+  const pr = s5.profile;
+  ok(pr.body && pr.day && pr.nutrition, 'Neue Profilbereiche haben Standardwerte');
+  Object.assign(pr.body, { age: 30, sex: 'm', heightCm: 180, restingHr: 58, hrv: 60 });
+  pr.bodyweight = 80;
+  ok(Math.abs(bmr(pr) - 1780) < 1, 'Grundumsatz Mifflin 80 kg/180 cm/30 J./m = 1780: ' + bmr(pr));
+  pr.goals = ['muskel'];
+  const t = nutritionTargets(pr, { trainingMin: 60 });
+  ok(t.kcal > 2600 && t.kcal < 3200, 'Kalorien Muskelaufbau plausibel: ' + t.kcal);
+  ok(t.protein === 145, 'Protein 1,8 g/kg (gerundet): ' + t.protein);
+  ok(t.waterL >= 3 && t.waterL <= 3.5, 'Wasser ~3,3 l: ' + t.waterL);
+  pr.goals = ['fett'];
+  ok(nutritionTargets(pr, { trainingMin: 60 }).kcal < t.kcal - 500, 'Fettabbau: weniger Kalorien');
+  const minor = JSON.parse(JSON.stringify(pr)); minor.body.age = 16;
+  const tm = nutritionTargets(minor, { trainingMin: 60 });
+  ok(tm.minor && tm.notes.some((n) => /Wachstum/.test(n)), 'Jugendliche: Hinweis, kein großes Defizit');
+  const noAge = JSON.parse(JSON.stringify(pr)); noAge.body.age = null;
+  ok(nutritionTargets(noAge).kcal === null, 'Ohne Alter kein Kalorienziel');
+
+  // Tagesform
+  ok(readiness({ ...DEFAULT_CI(), hr: 68 }, pr).reasons.some((r) => /Ruhepuls/.test(r)), 'Erhöhter Ruhepuls erkannt');
+  ok(readiness({ ...DEFAULT_CI(), hrv: 40 }, pr).level === 'reduziert', 'Niedrige HRV → reduzieren');
+  const wrecked = { ...DEFAULT_CI(), energy: 'niedrig', sleep: 'schlecht', sleepH: 5, stress: 'hoch' };
+  ok(readiness(wrecked, pr).level === 'regeneration', 'Sehr schlechte Form → Regeneration vorschlagen');
+  ok(fl(wrecked, pr) === 2, 'Fatigue gedeckelt auf 2');
+  ok(fl({ ...DEFAULT_CI(), energy: 'hoch', sleep: 'gut' }, pr) === -1, 'Fit → −1');
+
+  // Regenerationsplan
+  const rp = planLocal({ settings: s5, sets: [], budgetMin: 40, now, checkin: { ...DEFAULT_CI(), wish: 'regen' } });
+  ok(rp.title === 'Regeneration' && rp.items.every((i) => i.kind === 'timed'), 'Regeneration: nur Cardio/Mobility');
+  ok(sessionSec(rp.items) <= 41 * 60, 'Regeneration passt ins Budget: ' + sessionSec(rp.items) / 60);
+
+  // Tagesplan
+  Object.assign(pr.day, { wake: '06:30', bed: '22:30', trainTime: '18:00', commuteMin: 20 });
+  pr.nutrition.supps = ['kreatin', 'koffein'];
+  pr.nutrition.diet = ['vegetarisch'];
+  const sess = { title: 'Ganzkörper', budgetMin: 60, items: plan.items };
+  const day = planDay({ settings: s5, checkin: DEFAULT_CI(), session: sess });
+  ok(day.blocks.map((b) => b.key).join() === 'morgen,vor,training,nach,abend', 'Tag hat 5 Abschnitte');
+  const all = day.blocks.flatMap((b) => b.items).join(' ');
+  ok(/Kreatin/.test(all) && /Losfahren um 17:40/.test(all), 'Kreatin + Abfahrtszeit');
+  ok(/Skyr|Quark/.test(all) && !/Hähnchen/.test(all), 'Vegetarische Beispiele');
+  ok(/kein Koffein mehr/.test(all), 'Training 18:00 bei Bett 22:30: kein Koffein mehr');
+  ok(day.blocks[1].time === '15:00–18:00' && day.blocks[2].time === '18:00–19:00', 'Zeiten: ' + day.blocks.map((b) => b.time));
+  const late = planDay({ settings: s5, checkin: { ...DEFAULT_CI(), trainTime: '20:00' }, session: sess });
+  ok(late.blocks[1].items.some((x) => /kein Koffein/.test(x)), 'Spätes Training: kein Koffein');
+  const ai = planDay({ settings: s5, checkin: DEFAULT_CI(), session: sess, ai: { kernaussage: 'KI sagt', abschnitte: [{ key: 'abend', punkte: ['Früh ins Bett'] }] } });
+  ok(ai.blocks[4].items[0] === 'Früh ins Bett' && ai.levelText === 'KI sagt', 'KI-Texte werden übernommen');
+  ok(toMin('7:05') === 425 && toMin('x') === null, 'Uhrzeit-Parser');
+
+  // Prompt
+  const txt = profileText(pr);
+  ok(/30 Jahre/.test(txt) && /Vegetarisch/.test(txt) && /Kreatin/.test(txt) && /Training meist 18:00/.test(txt), 'Profiltext enthält Körper, Ernährung, Tagesablauf');
+  const ctx5 = buildPrompt({ settings: s5, sessions: [], sets: [], budgetMin: 50, now, checkin: wrecked });
+  ok(/TAGESZIELE \(berechnet\)/.test(ctx5.prompt) && /Lieber regenerieren/.test(ctx5.prompt), 'Prompt: Tagesziele + Bewertung');
+  const sch = planSchema(ctx5.allowedIds, ctx5.cardioIds);
+  const rawOk = { titel: 'X', begruendung: 'Y', aufwaermen: { minuten: 5, inhalt: '' }, finisher: { id: ctx5.cardioIds[0], minuten: 0, inhalt: '' },
+    uebungen: [{ id: 'lh-kniebeuge', saetze: 3, wdhMin: 6, wdhMax: 8, zielRir: 2, pauseSek: 150 }, { id: 'kz-latziehen', saetze: 3, wdhMin: 8, wdhMax: 10, zielRir: 2, pauseSek: 120 }] };
+  const noTag = convertPlan(rawOk, { settings: s5, budgetMin: 50, ...ctx5 });
+  ok(noTag.dayAi === null && noTag.items.length >= 3, 'Fehlender Tagesplan der KI ist kein harter Fehler');
+  const withTag = convertPlan({ ...rawOk, tag: { kernaussage: 'Heute locker', abschnitte: [{ key: 'morgen', punkte: ['Wasser'] }] } }, { settings: s5, budgetMin: 50, ...ctx5 });
+  ok(withTag.dayAi?.kernaussage === 'Heute locker', 'KI-Tagesplan wird übernommen');
+  ok(validate(sch, { ...rawOk, tag: { kernaussage: 'a', abschnitte: [] } }).length === 0, 'Schema akzeptiert Tagesplan');
+  log(`${pass} Tests bestanden, ${fail} fehlgeschlagen (Profil & Tagesplan)`);
+}
+function DEFAULT_CI() { return { energy: 'normal', sleep: 'okay', sore: [], pain: [], wish: '', sleepH: null, stress: '', hr: null, hrv: null, lastMeal: '', ate: '', trainTime: '', loads: [] }; }
+
+// ---------- Apple Health (Kurzbefehl-Text) ----------
+import { parseHealth, parseLooseNumber, parseSleep, sleepChip } from '../js/logic/health.js';
+{
+  const txt = 'KraftCoach Health\nruhepuls: 58 count/min\nhrv: 62,4 ms\nschlaf: 7,2\ngewicht: 80,4 kg\nschritte: 8.500\naktivkcal: 1.234';
+  const h = parseHealth(txt);
+  ok(h.hr === 58 && h.hrv === 62 && h.sleepH === 7.2 && h.weight === 80.4 && h.steps === 8500 && h.activeKcal === 1234, 'Health-Text komplett: ' + JSON.stringify(h));
+  ok(parseHealth('Ruhepuls=61; Schlaf=7:30; Gewicht=79.9').sleepH === 7.5, 'Semikolon-Format, Schlaf 7:30');
+  ok(parseHealth('hallo welt') === null && parseHealth('') === null, 'Kein Health-Text → null');
+  ok(parseHealth('ruhepuls: \ngewicht: 500') === null, 'Leere/unsinnige Werte ignoriert');
+  ok(parseSleep('7 h 12 min') === 7.2 && Math.abs(parseSleep('432') - 7.2) < 0.01 && Math.abs(parseSleep('25920') - 7.2) < 0.01 && parseSleep('7,2 h') === 7.2, 'Schlaf: h/min, Minuten, Sekunden');
+  ok(parseLooseNumber('1.234,5') === 1234.5 && parseLooseNumber('80.4') === 80.4 && parseLooseNumber('8,500', { integer: true }) === 8500, 'Zahlenformate');
+  ok(sleepChip(5.2) === 5 && sleepChip(6.6) === 7 && sleepChip(8.6) === 8 && sleepChip(9.5) === 9, 'Schlaf → Auswahl');
+  log(`${pass} Tests bestanden, ${fail} fehlgeschlagen (Apple Health)`);
+}

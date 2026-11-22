@@ -226,3 +226,9 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); ou
 @keyframes spin { to { transform: rotate(360deg); } }
 .hr { height: 1px; background: var(--line); margin: 14px 0; }
 .pill-note { font-size: 13px; padding: 8px 12px; border-radius: 10px; background: var(--surface-2); color: var(--muted); }
+
+/* Dein Tag */
+.kpis.four { grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.kpis.four .kpi { background: var(--surface-2); padding: 10px 6px; text-align: center; }
+.kpis.four .kpi b { font-size: 17px; }
+.day-block li::marker { color: var(--accent); }

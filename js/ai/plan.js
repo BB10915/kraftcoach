@@ -8,7 +8,9 @@ import { setE1rm } from '../logic/e1rm.js';
 import { validate } from './schema.js';
 import { generateJson, AiError } from './gemini.js';
 import { fmtNum, clamp } from '../util.js';
-import { goalsText, checkinText, REGIONS } from '../data/goals.js';
+import { checkinText, REGIONS, readiness, LEVEL_TEXT } from '../data/goals.js';
+import { profileText } from '../data/profile.js';
+import { nutritionTargets, targetsText } from '../logic/daycoach.js';
 
 const H = 3600000;
 
@@ -16,7 +18,7 @@ export function planSchema(allowedIds, cardioIds) {
   const int = (min, max) => ({ type: 'integer', minimum: min, maximum: max });
   return {
     type: 'object',
-    required: ['titel', 'begruendung', 'aufwaermen', 'uebungen', 'finisher'],
+    required: ['titel', 'begruendung', 'aufwaermen', 'uebungen', 'finisher', 'tag'],
     properties: {
       titel: { type: 'string', maxLength: 60 },
       begruendung: { type: 'string', maxLength: 400 },
@@ -44,6 +46,22 @@ export function planSchema(allowedIds, cardioIds) {
         type: 'object', required: ['id', 'minuten', 'inhalt'],
         properties: { id: { type: 'string', enum: cardioIds }, minuten: int(0, 12), inhalt: { type: 'string', maxLength: 160 } },
       },
+      tag: {
+        type: 'object', required: ['kernaussage', 'abschnitte'],
+        properties: {
+          kernaussage: { type: 'string', maxLength: 200 },
+          abschnitte: {
+            type: 'array', maxItems: 5,
+            items: {
+              type: 'object', required: ['key', 'punkte'],
+              properties: {
+                key: { type: 'string', enum: ['morgen', 'vor', 'training', 'nach', 'abend'] },
+                punkte: { type: 'array', maxItems: 5, items: { type: 'string', maxLength: 180 } },
+              },
+            },
+          },
+        },
+      },
     },
   };
 }
@@ -60,7 +78,13 @@ Regeln:
 - Richte Wiederholungsbereiche, Volumen und Finisher an den ZIELEN aus (z. B. Stärker werden: Hauptübungen 4–6 Wdh.; Muskelaufbau: 6–12 Wdh.; Fitter werden/Fett abbauen: längerer Finisher; Beweglicher/Gesund: längeres Mobility-Aufwärmen).
 - TAGESFORM beachten: Bei niedriger Energie oder schlechtem Schlaf weniger Sätze und Ziel-RIR +1. Muskelkater-Bereiche nur leicht belasten. SCHMERZ-Bereiche komplett meiden. Bei guter Form darf es etwas mehr sein. Einen Wunsch (z. B. Fokus Oberkörper) umsetzen, wenn die Erholung es erlaubt.
 - Erwähne in der begruendung kurz, wie du Ziele und Tagesform berücksichtigt hast.
-- Schreibe auf Deutsch, Hinweise kurz (Technik, Tempo, Fokus).`;
+- Schreibe auf Deutsch, Hinweise kurz (Technik, Tempo, Fokus).
+TAGESPLAN (Feld tag): Plane zusätzlich den ganzen Tag rund um das Training – Abschnitte morgen, vor, training, nach, abend mit je 2–5 kurzen, konkreten Punkten (mit Uhrzeiten aus dem TAGESABLAUF).
+- Nutze die berechneten TAGESZIELE (Kalorien, Protein, Wasser) – erfinde keine anderen Zahlen.
+- Berücksichtige Ernährungsform, Unverträglichkeiten, Supplements, Essensmöglichkeiten, Arbeits-/Schulzeiten, Weg zum Gym und den Schlaf.
+- Bei unter 18-Jährigen: keine Koffein-Empfehlung, kein Kaloriendefizit über 200 kcal.
+- kernaussage: ein Satz, ob heute schwer trainiert, das Volumen reduziert oder regeneriert wird und warum.
+- Allgemeine Empfehlungen, keine Diagnosen oder medizinischen Ratschläge.`;
 
 /** Kompakte Zusammenfassung der Historie für den Prompt (spart Tokens). */
 export function buildPrompt({ settings, sessions, sets, budgetMin, now = Date.now(), checkin = null }) {
@@ -71,6 +95,7 @@ export function buildPrompt({ settings, sessions, sets, budgetMin, now = Date.no
   const allowed = EXERCISES.filter((e) => p.equipment.includes(e.eq) && !e.primary.some((m) => painM.has(m)));
   const status = muscleStatus(sets, now);
   const done = sessions.filter((s) => s.status === 'done');
+  const ready = readiness(checkin, p);
 
   const recovery = Object.entries(status)
     .map(([m, o]) => `${MUSCLES[m]}: ${o.last ? `zuletzt vor ${Math.round(o.hours)} h` : 'noch nie'}, 7 Tage ${fmtNum(o.sets7d)} Sätze, Erholung ${Math.round(o.readiness * 100)} %`)
@@ -106,17 +131,18 @@ export function buildPrompt({ settings, sessions, sets, budgetMin, now = Date.no
 
   const prompt = `ZEITBUDGET: ${budgetMin} Minuten (gesamt, inkl. Aufwärmen und Finisher)
 
-PROFIL
-Ziele: ${goalsText(p)}
-Erfahrung: ${p.experience}
-Training: ${p.daysPerWeek}× pro Woche
+PROFIL (statische Daten)
+${profileText(p)}
 Ausrüstung: ${p.equipment.map((e) => EQUIPMENT[e]).join(', ')}
-Hinweise/Einschränkungen: ${p.notes || 'keine'}
 ${calib}
 Einheiten in den letzten 7 Tagen: ${done.filter((s) => now - (s.startedAt ?? 0) < 7 * 24 * H).length}
 
-TAGESFORM (Check-in vor dem Training)
+TAGESFORM (Check-in, tagesaktuell)
 ${checkinText(checkin)}
+Bewertung: ${LEVEL_TEXT[ready.level][0]}${ready.reasons.length ? ` (${ready.reasons.join(', ')})` : ''}
+
+TAGESZIELE (berechnet)
+${targetsText(nutritionTargets(p, { trainingMin: budgetMin, checkin }))}
 
 ERHOLUNG JE MUSKEL
 ${recovery}
@@ -144,7 +170,9 @@ ${catalog}`;
 export function convertPlan(raw, { settings, budgetMin, allowedIds, cardioIds }) {
   const errs = validate(planSchema(allowedIds, cardioIds), raw);
   // Unbekannte Übungen tolerieren wir (werden verworfen), alles andere ist ein harter Fehler.
-  const hard = errs.filter((e) => !/\.id: Wert nicht erlaubt/.test(e));
+  // Fehler im Tagesplan (tag) sind weich: dann nimmt die App ihren lokalen Tagesplan.
+  const tagBad = errs.some((e) => e.startsWith('$.tag'));
+  const hard = errs.filter((e) => !/\.id: Wert nicht erlaubt/.test(e) && !e.startsWith('$.tag'));
   if (hard.length) throw new AiError('invalid', 'Die KI-Antwort passt nicht zum Schema.', { detail: hard.slice(0, 5).join('; ') });
 
   const items = [];
@@ -168,7 +196,8 @@ export function convertPlan(raw, { settings, budgetMin, allowedIds, cardioIds })
   const fin = raw.finisher;
   if (fin && fin.minuten > 0 && cardioIds.includes(fin.id)) items.push(makeItem(fin.id, settings, { role: 'finisher', minutes: fin.minuten, text: fin.inhalt }));
 
-  return { title: raw.titel || 'Training', rationale: raw.begruendung || '', items: fitToBudget(items, budgetMin * 60) };
+  const dayAi = !tagBad && raw.tag ? { kernaussage: raw.tag.kernaussage, abschnitte: raw.tag.abschnitte } : null;
+  return { title: raw.titel || 'Training', rationale: raw.begruendung || '', items: fitToBudget(items, budgetMin * 60), dayAi };
 }
 
 /**
@@ -177,7 +206,8 @@ export function convertPlan(raw, { settings, budgetMin, allowedIds, cardioIds })
  */
 export async function makePlan({ settings, sessions, sets, budgetMin, useAi = true, checkin = null }) {
   const local = () => ({ ...planLocal({ settings, sets, budgetMin, checkin }), source: 'local' });
-  if (!useAi || !settings.ai.enabled || !settings.ai.apiKey) return local();
+  // Regenerationstag braucht keine KI-Anfrage (spart Kontingent).
+  if (!useAi || !settings.ai.enabled || !settings.ai.apiKey || checkin?.wish === 'regen') return local();
   const ctx = buildPrompt({ settings, sessions, sets, budgetMin, checkin });
   const schema = planSchema(ctx.allowedIds, ctx.cardioIds);
   let lastErr;
