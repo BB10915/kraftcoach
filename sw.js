@@ -1,6 +1,6 @@
 // Service Worker: speichert die App-Dateien, damit sie offline startet.
 // Bei jeder Änderung an der App VERSION erhöhen, damit Handys das Update laden.
-const VERSION = 'kc-v5';
+const VERSION = 'kc-v6';
 const FILES = [
   './', './index.html', './manifest.webmanifest', './css/app.css',
   './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png',

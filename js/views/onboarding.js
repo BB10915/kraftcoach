@@ -45,7 +45,7 @@ function inp(path, label, { type = 'text', ph = '', min, max, wide = false } = {
   const attrs = `data-f="${path}" data-t="${type}" data-l="${esc(label.replace(/ \*$/, ''))}" ${min != null ? `data-min="${min}"` : ''} ${max != null ? `data-max="${max}"` : ''} placeholder="${esc(ph)}"`;
   const field = type === 'area'
     ? `<textarea rows="2" ${attrs}>${esc(val)}</textarea>`
-    : `<input type="text" ${type === 'num' ? 'inputmode="decimal"' : type === 'time' ? 'inputmode="numeric"' : ''} ${attrs} value="${esc(val)}" autocomplete="off">`;
+    : `<input type="text" ${type === 'num' ? 'inputmode="decimal"' : type === 'time' ? 'inputmode="text" maxlength="5"' : ''} ${attrs} value="${esc(val)}" autocomplete="off">`;
   return `<label class="field ${wide ? '' : 'grow'}"><span>${label}</span>${field}</label>`;
 }
 const row = (...fields) => `<div class="row" style="align-items:flex-end">${fields.join('')}</div>`;
