@@ -26,6 +26,7 @@ export const DEFAULT_SETTINGS = {
     apiKey: '',
     model: 'gemini-3.6-flash',
     enabled: true,
+    chat: true, // Coach-Chat-Knopf anzeigen
   },
   training: {
     defaultMin: 50,

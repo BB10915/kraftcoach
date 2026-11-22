@@ -18,6 +18,11 @@ let tick = null;
 let draft = null; // { key, weight, reps, reason, calibrating }
 let beeped = false;
 
+/** Nach Änderungen von außen (Chat) den Satz-Vorschlag neu berechnen. */
+export function resetDraft() {
+  draft = null;
+}
+
 export function leave() {
   clearInterval(tick);
   tick = null;

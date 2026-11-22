@@ -16,6 +16,8 @@ import { toast, confirmSheet, sheet, ICONS } from '../ui.js';
 import { esc, uid, fmtDate, fmtMin, fmtNum, relDays, clamp } from '../util.js';
 
 let budget = null;
+export const setBudget = (m) => (budget = m);
+export const getBudget = () => budget ?? S.settings.training.defaultMin ?? 50;
 let loading = false;
 let checkin = JSON.parse(JSON.stringify(DEFAULT_CHECKIN));
 let showBody = false;
@@ -320,6 +322,7 @@ export function render(root, route, app) {
   body += recoveryHtml() + recentHtml();
 
   root.innerHTML = `<div class="page-head"><div><h1>Heute</h1><div class="sub">${fmtDate(Date.now())}</div></div></div>${body}`;
+
 
   root.onclick = async (e) => {
     const el = e.target.closest('[data-act]');

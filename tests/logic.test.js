@@ -407,3 +407,52 @@ import { EXERCISES } from '../js/data/exercises.js';
   ok(guideFor('unbekannt-xyz').steps.length === 1, 'Fallback für unbekannte Übung');
   log(`${pass} Tests bestanden, ${fail} fehlgeschlagen (Anleitungen)`);
 }
+
+// --- Coach-Chat
+import { applyActions, parseLocalCommand, ACTION_TYPES } from '../js/ai/chatactions.js';
+import { chatContext, cleanReply, CHAT_SCHEMA } from '../js/ai/chat.js';
+{
+  const st = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
+  const a = makeItem('lh-bankdruecken', st), b = makeItem('kh-seitheben', st);
+  const sess = { id: 's1', status: 'active', budgetMin: 50, title: 'Test', items: [a, b], currentUid: a.uid, startedAt: 0 };
+  const dc = (u) => (u === a.uid ? 2 : 0);
+
+  let r = applyActions([{ typ: 'pause_uebung', zahl: 120 }], { settings: st, session: sess, doneCount: dc });
+  ok(r.session.items[0].restSec === 120 && sess.items[0].restSec !== 120, 'Chat: Pause der aktuellen Übung (Original unverändert)');
+  r = applyActions([{ typ: 'pause_isolation', zahl: 75 }], { settings: st, session: sess, doneCount: dc });
+  ok(r.settings.training.restIsolation === 75 && r.session.items[1].restSec === 75 && r.session.items[0].restSec === a.restSec, 'Chat: Isolationspause in Einstellungen + heute');
+  r = applyActions([{ typ: 'saetze', zahl: 1 }], { settings: st, session: sess, doneCount: dc });
+  ok(r.session.items[0].sets === 2, 'Chat: Sätze nicht unter bereits gemachte');
+  r = applyActions([{ typ: 'dauer_heute', zahl: 999 }], { settings: st, session: sess, doneCount: dc });
+  ok(r.session.budgetMin === 180, 'Chat: Dauer begrenzt');
+  r = applyActions([{ typ: 'dauer_heute', zahl: 40 }], { settings: st, session: null });
+  ok(r.todayBudget === 40 && !r.sessionChanged, 'Chat: Dauer ohne Training → Budget auf Heute');
+  r = applyActions([{ typ: 'uebung_tauschen', id: 'kh-bankdruecken' }], { settings: st, session: sess, doneCount: dc });
+  ok(r.session.items[0].status === 'done' && r.session.items[1].exerciseId === 'kh-bankdruecken' && r.session.currentUid === r.session.items[1].uid, 'Chat: Tausch nach 2 Sätzen setzt mit neuer Übung fort');
+  r = applyActions([{ typ: 'uebung_tauschen', id: 'kh-hammercurl', alt: 'kh-seitheben' }], { settings: st, session: sess, doneCount: dc });
+  ok(r.session.items[1].exerciseId === 'kh-hammercurl' && r.session.items[1].uid === b.uid && r.session.items.length === 2, 'Chat: Tausch ohne Sätze ersetzt');
+  r = applyActions([{ typ: 'uebung_streichen', id: 'lh-bankdruecken' }], { settings: st, session: sess, doneCount: dc });
+  ok(r.session.items[0].status === 'done' && r.session.currentUid === b.uid, 'Chat: Streichen der aktuellen Übung springt weiter');
+  r = applyActions([{ typ: 'uebung_hinzufuegen', id: 'gibtsnicht' }, { typ: 'loeschen_alles' }, { typ: 'zeit_training', text: '18.30' }, { typ: 'supplement_hinzu', id: 'kreatin' }], { settings: st, session: sess });
+  ok(!r.results[0].ok && !r.results[1].ok && r.settings.profile.day.trainTime === '18:30' && r.settings.profile.nutrition.supps.includes('kreatin'), 'Chat: Unbekanntes abgelehnt, Uhrzeit & Supplement übernommen');
+  r = applyActions([{ typ: 'pause_starten', zahl: 90 }], { settings: st, session: { ...sess, status: 'planned' }, now: 1000 });
+  ok(!r.results[0].ok, 'Chat: Pausentimer nur im laufenden Training');
+  r = applyActions([{ typ: 'ton', zahl: 0 }, { typ: 'koerpergewicht', zahl: '82,5' }], { settings: st, session: null });
+  ok(r.settings.training.sound === false && r.settings.profile.bodyweight === 82.5, 'Chat: Ton aus, Gewicht mit Komma');
+
+  const P = (t, o) => parseLocalCommand(t, o);
+  ok(JSON.stringify(P('Pause 2 Minuten', { hasSession: true })) === '[{"typ":"pause_uebung","zahl":120}]', 'Lokal: Pause 2 Minuten');
+  ok(P('Stell die Pause für Grundübungen auf 180 Sekunden')[0].typ === 'pause_grund', 'Lokal: Grundübungspause');
+  ok(P('starte eine Pause von 90 s', { active: true, hasSession: true })[0].typ === 'pause_starten', 'Lokal: Timer starten');
+  ok(P('Ich habe heute nur 40 Minuten')[0].typ === 'dauer_heute' && P('Training immer 60 Minuten')[0].typ === 'dauer_standard', 'Lokal: Dauer heute/Standard');
+  ok(P('Ton aus')[0].zahl === 0 && P('Vibration an')[0].zahl === 1, 'Lokal: an/aus');
+  ok(P('4 Sätze')[0].zahl === 4 && P('8 bis 12 Wiederholungen')[0].zahl2 === 12, 'Lokal: Sätze/Wdh.');
+  ok(P('Lohnt sich Kreatin?') === null, 'Lokal: Frage ist kein Befehl');
+
+  ok(CHAT_SCHEMA.properties.aktionen.items.properties.typ.enum.length === ACTION_TYPES.length, 'Chat-Schema kennt alle Aktionen');
+  const c = cleanReply({ antwort: ' Ok ', aktionen: [{ typ: 'ton', zahl: 0 }, { typ: 'boese' }, { zahl: 3 }] });
+  ok(c.text === 'Ok' && c.actions.length === 1, 'Chat: ungültige Aktionen verworfen');
+  const ctx = chatContext({ settings: st, session: sess, sets: [], doneCount: dc });
+  ok(ctx.includes('TRAINING LÄUFT') && ctx.includes('lh-bankdruecken') && ctx.includes('← AKTUELL') && !ctx.includes(st.ai.apiKey || 'AIza'), 'Chat-Kontext enthält Training, aber keinen Schlüssel');
+  log(`${pass} Tests bestanden, ${fail} fehlgeschlagen (Chat)`);
+}

@@ -108,6 +108,16 @@ und Fortgeschrittenen kommt kein Vorschlag. Öffnen: im Plan auf den Übungsname
 „Kann ich schon“ blendet den Vorschlag für diese Übung aus; zurücksetzen oder ganz abschalten unter *Einstellungen → Training*.
 Die Animation stoppt per Antippen.
 
+**Coach-Chat:** Der kleine runde 💬-Knopf unten rechts öffnet auf jeder Seite (auch mitten im Training) einen Chat mit dem
+KI-Coach. Frag ihn alles zu Training, Technik, Ernährung oder Supplements – er kennt dein Profil und das laufende Training.
+Sagst du ihm, dass er etwas ändern soll (z. B. „Pause auf 2 Minuten“, „heute nur 40 Minuten“, „tausch Bankdrücken gegen
+Kurzhanteln“, „streich die Kniebeugen“, „Ton aus“, „ich trainiere jetzt um 18 Uhr“), macht er das direkt. Unter seiner Antwort
+steht mit ✓, was geändert wurde, und ein Knopf **↶ Rückgängig**. Der Chat darf nur eine feste Liste von Dingen ändern
+(Pausen, Zeiten, Sätze/Wdh., Übungen tauschen/streichen/hinzufügen, Ton/Vibration, Gewicht, Supplements, Profilhinweise) –
+nie Daten löschen oder den Schlüssel sehen. Ohne KI-Schlüssel (oder offline) versteht er einfache Befehle trotzdem.
+Der Verlauf bleibt nur auf deinem Handy; „Leeren“ löscht ihn. Knopf ausblenden: *Einstellungen → KI*.
+Jede Chat-Nachricht ist eine KI-Anfrage aus dem Gratis-Kontingent (dieselbe Bremse wie beim Tagesplan).
+
 **Heute:** Verfügbare Zeit wählen (Standard 50 Min) → **Plan erstellen**. Jede Übung zeigt die geschätzte Dauer.
 Mit ⇄ tauschst du eine Übung (z. B. Gerät belegt), mit ✕ entfernst du sie. Dann **Training starten**.
 
@@ -160,8 +170,8 @@ Dann im Browser <http://localhost:8123> öffnen. Mit `Ctrl + C` im Terminal wied
 | `js/data/profile.js` | Erweitertes Profil (Körper, Ernährung, Tagesablauf …) |
 | `js/data/guides.js` | Übungsanleitungen (Schritte, Fehler, Schwierigkeit) und wann sie vorgeschlagen werden |
 | `js/logic/` | Rechenlogik: 1RM, Satzvorschläge, Zeitplanung, Erholung, lokaler Planer, Tages-Coach, Statistik |
-| `js/ai/` | Gemini-Anbindung, JSON-Schema-Prüfung, Prompt |
-| `js/views/` | Bildschirme: Heute, Training, Fortschritt, Übung, Einstellungen; `anim.js` = Übungsanimationen |
+| `js/ai/` | Gemini-Anbindung, JSON-Schema-Prüfung, Prompt; `chat.js`/`chatactions.js` = Coach-Chat und was er ändern darf |
+| `js/views/` | Bildschirme: Heute, Training, Fortschritt, Übung, Einstellungen; `anim.js` = Übungsanimationen, `chat.js` = Chatfenster |
 | `js/store.js` | Speicherung im Browser (IndexedDB), Backup |
 | `sw.js`, `manifest.webmanifest` | Installation als App, Offline-Betrieb |
-| `tests/logic.test.js` | 142 automatische Tests |
+| `tests/logic.test.js` | 163 automatische Tests |

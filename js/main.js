@@ -9,6 +9,7 @@ import * as progress from './views/progress.js';
 import * as exercise from './views/exercise.js';
 import * as settings from './views/settings.js';
 import * as onboarding from './views/onboarding.js';
+import { initChat, updateFab } from './views/chat.js';
 
 const ROUTES = {
   start: onboarding,
@@ -62,6 +63,7 @@ function render() {
   current = view;
   if (r.name === 'start') $('#tabbar').innerHTML = '';
   else renderTabbar(r.name);
+  updateFab(r.name);
   const root = $('#app');
   root.onclick = null;
   view.render(root, r, app);
@@ -78,6 +80,7 @@ async function boot() {
   navigator.storage?.persist?.().catch(() => {});
   document.addEventListener('pointerdown', unlockAudio, { passive: true });
   window.addEventListener('hashchange', render);
+  initChat(app, { setTodayBudget: today.setBudget, getTodayBudget: today.getBudget, onChange: workout.resetDraft });
   if (!location.hash && store.activeSession()) location.hash = '#/training';
   render();
 

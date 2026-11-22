@@ -9,6 +9,7 @@ import { STEP } from './onboarding.js';
 import { parseHealth, healthText } from '../logic/health.js';
 import { testConnection, usageToday, AiError } from '../ai/gemini.js';
 import { toast, confirmSheet } from '../ui.js';
+import { updateFab } from './chat.js';
 import { esc, parseNum, dayKey, fmtNum } from '../util.js';
 
 const MODELS = [
@@ -104,7 +105,8 @@ export function render(root, route, app) {
 
     <h2>KI-Coach (Google Gemini)</h2>
     <div class="card">
-      <label class="check"><input type="checkbox" name="aiEnabled" ${st.ai.enabled ? 'checked' : ''}> KI für Tagespläne verwenden</label>
+      <label class="check"><input type="checkbox" name="aiEnabled" ${st.ai.enabled ? 'checked' : ''}> KI für Tagespläne und Coach-Chat verwenden</label>
+      <label class="check"><input type="checkbox" name="aiChat" ${st.ai.chat !== false ? 'checked' : ''}> Coach-Chat-Knopf (💬 unten rechts) anzeigen</label>
       <label class="field"><span>API-Schlüssel – wird nur auf diesem Gerät gespeichert</span>
         <div class="row"><input class="grow" type="${showKey ? 'text' : 'password'}" name="apiKey" value="${esc(st.ai.apiKey)}" placeholder="AIza…" spellcheck="false" autocapitalize="off">
         <button type="button" class="btn sm" data-act="toggle-key">${showKey ? 'Verbergen' : 'Zeigen'}</button></div>
@@ -131,6 +133,7 @@ export function render(root, route, app) {
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     await saveForm(form);
+    updateFab('einstellungen');
     toast('Gespeichert ✓');
     render(root, route, app);
   });
@@ -205,6 +208,7 @@ async function saveForm(form) {
   st.training.wakeLock = f.get('wakeLock') === 'on';
   st.training.guideHints = f.get('guideHints') === 'on';
   st.ai.enabled = f.get('aiEnabled') === 'on';
+  st.ai.chat = f.get('aiChat') === 'on';
   st.ai.apiKey = String(f.get('apiKey') ?? '').trim();
   st.ai.model = String(f.get('model') ?? '').trim() || 'gemini-3.6-flash';
   await store.saveSettings(st);

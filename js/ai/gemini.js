@@ -105,14 +105,15 @@ async function post(url, apiKey, body) {
  * Fragt Gemini nach einer JSON-Antwort.
  * @returns {Promise<any>} geparstes JSON (noch nicht gegen das Schema geprüft)
  */
-export async function generateJson({ apiKey, model, system, prompt, schema }) {
+/** history: frühere Chat-Nachrichten [{ role: 'user'|'model', text }] (optional). */
+export async function generateJson({ apiKey, model, system, prompt, schema, history = [] }) {
   if (!apiKey) throw new AiError('nokey', 'Kein API-Schlüssel hinterlegt.');
   if (typeof navigator !== 'undefined' && navigator.onLine === false) throw new AiError('offline', 'Du bist offline.');
   localThrottle();
   const url = `${BASE}${encodeURIComponent(model)}:generateContent`;
   const body = {
     systemInstruction: { parts: [{ text: system }] },
-    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    contents: [...history.map((m) => ({ role: m.role === 'model' ? 'model' : 'user', parts: [{ text: m.text }] })), { role: 'user', parts: [{ text: prompt }] }],
     generationConfig: { responseMimeType: 'application/json', responseJsonSchema: schema },
   };
   recordUsage();
@@ -122,7 +123,7 @@ export async function generateJson({ apiKey, model, system, prompt, schema }) {
   // Manche Modelle kennen responseJsonSchema evtl. nicht -> einmal ohne Schema (steht dann im Prompt).
   if (res.status === 400 && /responseJsonSchema|response_json_schema|schema/i.test(data?.error?.message ?? '')) {
     body.generationConfig = { responseMimeType: 'application/json' };
-    body.contents[0].parts[0].text = `${prompt}\n\nAntworte ausschließlich mit JSON nach diesem Schema:\n${JSON.stringify(schema)}`;
+    body.contents.at(-1).parts[0].text = `${prompt}\n\nAntworte ausschließlich mit JSON nach diesem Schema:\n${JSON.stringify(schema)}`;
     recordUsage();
     res = await post(url, apiKey, body);
     data = await res.json().catch(() => null);
