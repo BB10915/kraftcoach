@@ -88,7 +88,7 @@ export function frequencyText(scheme, daysPerWeek) {
   const days = minDays(daysPerWeek);
   const f = weeklyFrequency(scheme, days);
   const txt = `jede Muskelgruppe ca. ${String(Math.round(f * 10) / 10).replace('.', ',')}× pro Woche bei ${days} Einheiten`;
-  return f < 2 ? `${txt} – weniger als die empfohlenen 2×. Mehr Trainingstage oder einen anderen Split wählen.` : txt;
+  return f < 2 ? `${txt} – weniger als die empfohlenen 2×. Mehr Trainingstage oder einen anderen Split wählen` : txt;
 }
 
 function phaseFor(week, weeks) {
