@@ -4,11 +4,47 @@ import * as store from '../store.js';
 import { S } from '../store.js';
 import { getEx, MUSCLES } from '../data/exercises.js';
 import { computePRs, weeklyVolume, weekStreak, trainingDays, bestsFor } from '../logic/stats.js';
+import { progressRadar, FITNESS_AXES, STRENGTH_AXES } from '../logic/radar.js';
+import { radarSvg } from './radar.js';
 import { confirmSheet, toast, ICONS } from '../ui.js';
 import { esc, fmtNum, fmtDate, fmtMin, dayKey, startOfWeek, DAY, MONTHS_LONG } from '../util.js';
 
 const TARGET = [6, 12]; // empfohlene Arbeitssätze pro Muskel und Woche (allgemeine Fitness)
 let weekOffset = 0;
+let radarView = 'fitness'; // fitness | strength
+
+const NO_DATA = {
+  recovery: 'Noch zu wenig Daten: ab 3 Check-ins mit Ruhepuls, HRV oder Schlaf in 4 Wochen.',
+  strength: 'Noch keine passende Übung in den letzten 6 Wochen.',
+};
+
+function radarHtml(bw) {
+  const r = progressRadar({ sessions: S.sessions, sets: S.sets, profile: S.settings.profile });
+  const fit = radarView === 'fitness';
+  const axes = fit ? FITNESS_AXES : STRENGTH_AXES;
+  const { now, before } = fit ? r.fitness : r.strength;
+  const rows = axes.map((a) => {
+    const v = now[a.key], b = before[a.key];
+    const d = v != null && b != null ? v - b : null;
+    const hint = v == null
+      ? (fit ? NO_DATA[a.key] ?? 'Noch zu wenig Daten.' : NO_DATA.strength)
+      : fit ? a.hint : `≈ ${fmtNum((v / 100) * a.target * bw, 0)} kg e1RM · 100 = ${fmtNum(a.target, 2)}× Körpergewicht`;
+    const delta = d == null ? '' : `<span class="radar-d ${d > 0 ? 'up' : d < 0 ? 'down' : ''}">${d > 0 ? '+' : ''}${d}</span>`;
+    const tag = fit && a.key === 'strength' ? 'button data-act="radar" data-v="strength"' : 'div';
+    return `<${tag} class="radar-row${v == null ? ' off' : ''}"><div class="grow"><b>${esc(a.label)}</b><div class="tiny muted">${esc(hint)}</div></div>
+      <div class="num radar-v">${v ?? '–'}${delta}</div>${fit && a.key === 'strength' ? ICONS.chev : ''}</${tag.split(' ')[0]}>`;
+  }).join('');
+  return `<div class="chips" style="margin-bottom:4px">
+      <button class="chip ${fit ? 'on' : ''}" data-act="radar" data-v="fitness">Fitness-Profil</button>
+      <button class="chip ${fit ? '' : 'on'}" data-act="radar" data-v="strength">Kraftprofil</button>
+    </div>
+    ${radarSvg(axes, now, before, { link: fit ? 'strength' : null })}
+    <div class="radar-legend tiny muted"><span><i></i>Heute</span><span><i class="before"></i>Vor 8 Wochen</span></div>
+    <div class="radar-rows">${rows}</div>
+    <p class="tiny muted" style="margin:10px 0 0">${fit
+      ? '100 = Ziel erreicht. Kraft zählt das beste e1RM der letzten 6 Wochen, alles andere die letzten 4 Wochen. Tippe auf „Kraft“ für die einzelnen Übungen.'
+      : 'Bestes geschätztes 1RM der letzten 6 Wochen geteilt durch dein Körpergewicht. Verwandte Übungen (z. B. Kurzhantel-Bankdrücken, Latziehen) werden umgerechnet.'}</p>`;
+}
 
 function calendarHtml(days) {
   const now = new Date();
@@ -71,6 +107,9 @@ export function render(root, route, app) {
   </div>
   <div class="card">${calendarHtml(days)}</div>
 
+  <h2>Dein Profil</h2>
+  <div class="card">${radarHtml(bw)}</div>
+
   <h2>Wochenvolumen pro Muskelgruppe</h2>
   <div class="card">${volumeHtml()}</div>
 
@@ -104,6 +143,7 @@ export function render(root, route, app) {
     if (!el) return;
     const act = el.dataset.act;
     if (act === 'ex') return app.go(`#/uebung/${encodeURIComponent(el.dataset.id)}`);
+    if (act === 'radar' || act === 'radar-axis') { radarView = el.dataset.v ?? 'strength'; return render(root, route, app); }
     if (act === 'wk-prev') { weekOffset--; return render(root, route, app); }
     if (act === 'wk-next') { weekOffset = Math.min(0, weekOffset + 1); return render(root, route, app); }
     if (act === 'del') {

@@ -370,6 +370,72 @@ import { parseHealth, parseLooseNumber, parseSleep, sleepChip } from '../js/logi
   log(`${pass} Tests bestanden, ${fail} fehlgeschlagen (Apple Health)`);
 }
 
+// ---------- Fortschritts-Netzdiagramm ----------
+import { strengthScores, fitnessScores, progressRadar, recoveryScore, healthFromSessions, STRENGTH_AXES, FITNESS_AXES } from '../js/logic/radar.js';
+import { radarSvg } from '../js/views/radar.js';
+{
+  const D = 86400000, now = Date.UTC(2026, 10, 25, 12);
+  let n = 0;
+  const set = (exerciseId, weight, reps, daysAgo, rir = 0, sessionId = 'r' + daysAgo) => ({ id: 'rs' + n++, sessionId, exerciseId, weight, reps, rir, ts: now - daysAgo * D });
+  // Bankdrücken 100 kg × 1 bei 80 kg Körpergewicht = 1,25× → 100 Punkte
+  let sc = strengthScores([set('lh-bankdruecken', 100, 1, 3)], 80, now);
+  ok(sc.hpush === 100 && sc.squat === null, 'Kraft: Ziel erreicht = 100, ohne Daten null');
+  sc = strengthScores([set('lh-bankdruecken', 50, 1, 3)], 80, now);
+  ok(sc.hpush === 50, 'Kraft: halbes Ziel = 50');
+  sc = strengthScores([set('lh-bankdruecken', 200, 1, 3)], 80, now);
+  ok(sc.hpush === 100, 'Kraft: über Ziel gedeckelt');
+  sc = strengthScores([set('kg-klimmzug', 24, 1, 3)], 80, now);
+  ok(sc.vpull === 100, 'Kraft: Klimmzug zählt Körpergewicht mit (80+24 = 1,3×)');
+  sc = strengthScores([set('kh-bankdruecken', 30, 1, 3)], 80, now);
+  ok(sc.hpush === Math.round((30 * 2.4) / 80 / 1.25 * 100), 'Kraft: Kurzhantel wird umgerechnet');
+  sc = strengthScores([set('lh-bankdruecken', 100, 1, 50)], 80, now);
+  ok(sc.hpush === null, 'Kraft: älter als 6 Wochen zählt nicht');
+  ok(strengthScores([{ ...set('lh-bankdruecken', 100, 1, 3), warmup: true }], 80, now).hpush === null, 'Kraft: Aufwärmsätze zählen nicht');
+
+  // Fitness-Profil
+  const sess = (daysAgo, items = [], checkin = null) => ({ id: 'r' + daysAgo, status: 'done', startedAt: now - daysAgo * D, date: new Date(now - daysAgo * D).toISOString(), items, checkin });
+  const sessions = [];
+  for (let w = 0; w < 4; w++) for (const d of [1, 3, 5]) sessions.push(sess(w * 7 + d, [
+    { kind: 'timed', status: 'done', exerciseId: 'c-rudergeraet', minutes: 20 },
+    { kind: 'timed', status: 'done', exerciseId: 'm-huefte', minutes: 5 },
+    { kind: 'timed', status: 'skipped', exerciseId: 'm-cooldown', minutes: 5 },
+  ]));
+  const profile = { bodyweight: 80, daysPerWeek: '3–4', body: {} };
+  const fs = fitnessScores({ sessions, sets: [], profile, health: [] }, now);
+  ok(fs.consistency === 100, 'Konstanz: 3 Einheiten/Woche bei Ziel 3 = 100');
+  ok(fs.conditioning === 100, 'Kondition: 60 Cardio-Min/Woche = 100');
+  ok(fs.mobility === 50, 'Beweglichkeit: 15 von 30 Min/Woche = 50, gestrichene zählen nicht');
+  ok(fs.volume === null && fs.strength === null && fs.recovery === null, 'Ohne Sätze/Health: null');
+  ok(Object.values(fitnessScores({ sessions: [], sets: [], profile }, now)).every((v) => v === null), 'Ganz ohne Training: alles null');
+  const half = fitnessScores({ sessions: sessions.filter((_, i) => i % 3 !== 2), sets: [], profile, health: [] }, now);
+  ok(half.consistency === 67, 'Konstanz: 2 von 3 pro Woche = 67');
+
+  // Volumen: 6 Sätze/Woche für jeden Muskel → 100; nur Brust → 1/12
+  const vs = [];
+  for (let w = 0; w < 4; w++) for (let i = 0; i < 6; i++) vs.push(set('ma-butterfly', 30, 10, w * 7 + 2, 2));
+  ok(fitnessScores({ sessions, sets: vs, profile, health: [] }, now).volume === Math.round(100 / 12), 'Muskelaufbau: nur Brust im Ziel');
+
+  // Erholung
+  const H = (daysAgo, o) => ({ ts: now - daysAgo * D, ...o });
+  ok(recoveryScore([H(1, { sleepH: 8 }), H(2, { sleepH: 8 })], {}, now - 28 * D, now) === null, 'Erholung: unter 3 Werten null');
+  ok(recoveryScore([H(1, { sleepH: 8 }), H(2, { sleepH: 8 }), H(3, { sleepH: 8 })], {}, now - 28 * D, now) === 100, 'Erholung: 8 h Schlaf = 100');
+  ok(recoveryScore([1, 2, 3].map((d) => H(d, { hrv: 60, hr: 60 })), { body: { hrv: 60, restingHr: 60 } }, now - 28 * D, now) === 50, 'Erholung: genau Normalwert = 50');
+  ok(recoveryScore([1, 2, 3].map((d) => H(d, { hrv: 72 })), { body: { hrv: 60 } }, now - 28 * D, now) === 100, 'Erholung: HRV +20 % = 100');
+  const hs = healthFromSessions([sess(1, [], { hr: 55, hrv: 70, sleepH: 7, health: { steps: 9000 } }), sess(2, [], DEFAULT_CI())]);
+  ok(hs.length === 1 && hs[0].hr === 55 && hs[0].steps === 9000, 'Health aus Check-ins der Einheiten');
+
+  // Vergleich mit vor 8 Wochen
+  const r = progressRadar({ sessions, sets: [set('lh-bankdruecken', 100, 1, 2), set('lh-bankdruecken', 80, 1, 60)], profile }, now);
+  ok(r.strength.now.hpush === 100 && r.strength.before.hpush === 80, 'Radar: heute vs. vor 8 Wochen');
+  ok(r.fitness.before.consistency === 0 || r.fitness.before.consistency === null, 'Radar: vor 8 Wochen keine Einheiten');
+  ok(Object.keys(r.fitness.now).join() === FITNESS_AXES.map((a) => a.key).join() && STRENGTH_AXES.length === 6, 'Radar: Achsen vollständig');
+
+  const svg = radarSvg(FITNESS_AXES, r.fitness.now, r.fitness.before, { link: 'strength' });
+  ok(svg.startsWith('<svg') && svg.includes('data-act="radar-axis"') && (svg.match(/<text /g) || []).length === 6 && !svg.includes('NaN'), 'Radar-SVG: 6 Beschriftungen, antippbar, keine NaN');
+  ok(!radarSvg(STRENGTH_AXES, {}, {}).includes('<circle'), 'Radar-SVG: ohne Daten keine Punkte');
+  log(`${pass} Tests bestanden, ${fail} fehlgeschlagen (Netzdiagramm)`);
+}
+
 // ---------- Übungsanleitungen & Animationen ----------
 import { GUIDES, guideFor, guideAdvice, timesDone } from '../js/data/guides.js';
 import { ANIMS, solve, poseAt, frameSvg } from '../js/views/anim.js';
