@@ -172,9 +172,9 @@ Dann im Browser <http://localhost:8123> öffnen. Mit `Ctrl + C` im Terminal wied
 | `js/data/goals.js` | Ziele, Check-in-Optionen, Tagesform-Bewertung, Startwert-Übungen |
 | `js/data/profile.js` | Erweitertes Profil (Körper, Ernährung, Tagesablauf …) |
 | `js/data/guides.js` | Übungsanleitungen (Schritte, Fehler, Schwierigkeit) und wann sie vorgeschlagen werden |
-| `js/logic/` | Rechenlogik: 1RM, Satzvorschläge, Zeitplanung, Erholung, lokaler Planer, Tages-Coach, Statistik |
+| `js/logic/` | Rechenlogik: 1RM, Satzvorschläge, Zeitplanung, Erholung, lokaler Planer, Tages-Coach, Statistik, Körperwerte-Tagebuch |
 | `js/ai/` | Gemini-Anbindung, JSON-Schema-Prüfung, Prompt; `chat.js`/`chatactions.js` = Coach-Chat und was er ändern darf |
 | `js/views/` | Bildschirme: Heute, Training, Fortschritt, Übung, Einstellungen; `anim.js` = Übungsanimationen, `chat.js` = Chatfenster |
 | `js/store.js` | Speicherung im Browser (IndexedDB), Backup |
 | `sw.js`, `manifest.webmanifest` | Installation als App, Offline-Betrieb |
-| `tests/logic.test.js` | 163 automatische Tests |
+| `tests/logic.test.js` | 184 automatische Tests |
