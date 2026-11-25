@@ -60,7 +60,8 @@ function blockCard() {
     <div class="chips">${[4, 5, 6].map((w) => chip('block-weeks', w, `${w} Wochen`, b.weeks === w)).join('')}</div>
     <div class="small muted" style="margin:12px 0 6px">Split</div>
     <div class="chips">${SPLIT_CHOICES.map(([k, l]) => chip('block-split', k, l, split === k)).join('')}</div>
-    <p class="tiny faint" style="margin:6px 0 0">${split === 'auto' ? `Automatisch nach ${esc(S.settings.profile.daysPerWeek)} Trainings pro Woche: ` : ''}${esc(SPLITS[b.scheme].label)}. Nächster Tag: ${esc(b.day.label)}.</p>
+    <p class="tiny ${b.freq < 2 ? '' : 'faint'}" style="margin:6px 0 0;${b.freq < 2 ? 'color:var(--warn)' : ''}">${esc(SPLITS[b.scheme].label)}: ${esc(b.freqText)}. Nächster Tag: ${esc(b.day.label)}.</p>
+    <p class="tiny faint" style="margin:6px 0 0">Automatisch heißt: der einfachste Split, der jede Muskelgruppe mindestens 2× pro Woche trainiert (Studienlage: bei gleichem Wochenvolumen sind Ganzkörper und Split gleich wirksam, 2× pro Woche ist besser als 1×). 2–3 Tage → Ganzkörper, ab 4 Tagen → Ober-/Unterkörper. Push/Pull/Beine erreicht 2× erst ab 6 Tagen.</p>
     <div class="btn-row" style="margin-top:12px">
       ${b.forced ? '<button type="button" class="btn sm" data-act="block-undo-deload">Deload zurücknehmen</button>' : b.deload ? '' : '<button type="button" class="btn sm" data-act="block-deload">Deload diese Woche</button>'}
       <button type="button" class="btn sm" data-act="block-new">Neuen Block starten</button>

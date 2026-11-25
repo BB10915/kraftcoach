@@ -458,7 +458,7 @@ import { chatContext, cleanReply, CHAT_SCHEMA } from '../js/ai/chat.js';
 }
 
 // --- Trainingsblock: Split, Periodisierung, Deload
-import { blockState, blockTag, dayForToday, splitFor, withDeloadNow, withNewBlock, DAYS } from '../js/logic/block.js';
+import { blockState, blockTag, dayForToday, splitFor, withDeloadNow, withNewBlock, DAYS, weeklyFrequency, frequencyText } from '../js/logic/block.js';
 import { matchesDay } from '../js/ai/plan.js';
 import { PATTERNS } from '../js/data/exercises.js';
 {
@@ -467,7 +467,7 @@ import { PATTERNS } from '../js/data/exercises.js';
   const mon = new Date(2026, 10, 23, 12, 0).getTime();
   const sb = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
   sb.training.block = { start: '2026-11-23', weeks: 5, split: 'auto', deloadWeek: null };
-  sb.profile.daysPerWeek = '3–4';
+  sb.profile.daysPerWeek = '4';
   sb.profile.experience = 'fortgeschritten';
   const at = (wk, extra = {}) => blockState({ ...sb, training: { ...sb.training, block: { ...sb.training.block, ...extra } } }, [], mon + wk * W + 2 * 86400000);
   const phases = [0, 1, 2, 3, 4, 5].map((w) => at(w).phase);
@@ -487,8 +487,10 @@ import { PATTERNS } from '../js/data/exercises.js';
 
   // Split nach Trainingstagen
   const sp = (days, exp = 'fortgeschritten', split = 'auto') => splitFor({ profile: { daysPerWeek: days, experience: exp }, training: { block: { split } } }).scheme;
-  ok(sp('2') === 'gk2' && sp('3') === 'gk' && sp('3–4') === 'okuk' && sp('4') === 'okuk' && sp('5+') === 'ppl', 'Auto-Split nach Tagen');
-  ok(sp('3–4', 'anfaenger') === 'gk' && sp('5+', 'anfaenger') === 'okuk', 'Anfänger: einfacherer Split');
+  ok(sp('2') === 'gk2' && sp('3') === 'gk' && sp('3–4') === 'gk' && sp('4') === 'okuk' && sp('5+') === 'okuk', 'Auto-Split nach Mindest-Tagen');
+  for (const d of ['2', '3', '3–4', '4', '5+']) ok(weeklyFrequency(sp(d), parseInt(d, 10)) >= 2, `Auto-Split trifft jede Muskelgruppe ≥ 2× bei ${d} Tagen`);
+  ok(weeklyFrequency('okuk', 3) < 2 && weeklyFrequency('ppl', 5) < 2 && weeklyFrequency('ppl', 6) >= 2, 'Frequenz: OK/UK bei 3, PPL bei 5 Tagen unter 2×');
+  ok(/weniger als/.test(frequencyText('ppl', '3–4')) && !/weniger als/.test(frequencyText('gk', '3')), 'Warnung bei < 2× pro Woche');
   ok(sp('5+', 'fortgeschritten', 'gk') === 'gk' && sp('2', 'x', 'ppl') === 'ppl', 'Split manuell');
 
   // Rotation: nach Oberkörper kommt Unterkörper
@@ -515,7 +517,7 @@ import { PATTERNS } from '../js/data/exercises.js';
   ok(ukPain.dayIdx === null && /nicht machbar/.test(ukPain.rationale), 'Split-Tag nicht machbar → Ersatz, keine Rotation');
 
   // PPL
-  const sp5 = JSON.parse(JSON.stringify(sb)); sp5.profile.daysPerWeek = '5+';
+  const sp5 = JSON.parse(JSON.stringify(sb)); sp5.profile.daysPerWeek = '5+'; sp5.training.block.split = 'ppl';
   const pushPlan = planLocal({ settings: sp5, sets: [], budgetMin: 50, now: mon, block: blockState(sp5, [], mon) });
   ok(regionsOf(pushPlan).every((r) => ['push', 'core'].includes(r)) && pushPlan.title === 'Push', 'Push-Tag: ' + regionsOf(pushPlan));
 

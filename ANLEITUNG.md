@@ -122,8 +122,10 @@ Jede Chat-Nachricht ist eine KI-Anfrage aus dem Gratis-Kontingent (dieselbe Brem
 Woche 1 **Einstieg** (eine Wiederholung mehr Reserve), dann **Aufbau** (volles Volumen, steigern), die vorletzte Woche **Intensiv**
 (ein Satz mehr bei den Hauptübungen, näher ans Limit) und zum Schluss eine **Deload**-Woche: gleiche Übungen, etwa halbes Volumen,
 rund 10 % leichter, RIR 3. Danach beginnt der nächste Block. Auf *Heute* siehst du Woche, Phase und welcher Tag dran ist.
-Der **Split** richtet sich nach deinen Trainingstagen: 2× Ganzkörper A/B, 3× Ganzkörper A/B/C, 3–4× oder 4× Ober-/Unterkörper,
-5+× Push/Pull/Beine (Anfänger bekommen den einfacheren Split). Die Tage wechseln sich der Reihe nach ab, egal an welchem Wochentag
+Der **Split** folgt der Studienlage statt Trends: Bei gleichem Wochenvolumen sind Ganzkörper und Split gleich wirksam,
+wichtig ist, dass jede Muskelgruppe **mindestens 2× pro Woche** drankommt und genug Sätze zusammenkommen (ca. 10–20 pro Muskel und Woche).
+Deshalb nimmt die App den einfachsten Split, der das bei deiner Mindestzahl an Tagen schafft: 2× Ganzkörper A/B, 3× und 3–4× Ganzkörper A/B/C,
+ab 4× Ober-/Unterkörper. Push/Pull/Beine gibt es nur auf Wunsch (2× pro Woche erst ab 6 Tagen); die App zeigt dann eine Warnung. Die Tage wechseln sich der Reihe nach ab, egal an welchem Wochentag
 du trainierst. Ein Wunsch im Check-in (z. B. Fokus Oberkörper) oder Schmerzen gehen vor. Sind deine Check-ins ab Woche 3 mehrmals
 schwach, schlägt die App vor, den Deload vorzuziehen. Unter *Einstellungen → Trainingsblock* stellst du ein: Deload alle 4, 5 oder
 6 Wochen, Split (automatisch oder fest), **Deload diese Woche** und **Neuen Block starten**. Lokaler Planer und KI halten sich beide daran.

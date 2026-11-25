@@ -56,21 +56,39 @@ export const SPLITS = {
 /** Auswahl in den Einstellungen. */
 export const SPLIT_CHOICES = [['auto', 'Automatisch'], ['gk', 'Ganzkörper'], ['okuk', 'Ober-/Unterkörper'], ['ppl', 'Push/Pull/Beine']];
 
-/** Welcher Split passt zu Trainingstagen und Erfahrung? */
+/** Mindestzahl Trainingstage aus der Profilangabe ('3–4' → 3, '5+' → 5). */
+export const minDays = (daysPerWeek) => parseInt(String(daysPerWeek ?? '3'), 10) || 3;
+
+/** Wie oft pro Woche kommt jede Muskelgruppe dran? (bei der Mindestzahl Trainingstage) */
+export function weeklyFrequency(scheme, days) {
+  const rot = SPLITS[scheme].rotation;
+  const share = (region) => rot.filter((d) => !DAYS[d].regions || DAYS[d].regions.includes(region)).length / rot.length;
+  return Math.min(share('lower'), share('push'), share('pull')) * days;
+}
+
+/**
+ * Welcher Split passt zu den Trainingstagen?
+ * Grundlage (Studienlage statt Trends): Bei gleichem Wochenvolumen sind Split und Ganzkörper gleichwertig
+ * (Ramos-Campo 2024, Schoenfeld 2019); entscheidend ist, dass jede Muskelgruppe mindestens 2× pro Woche
+ * trainiert wird (Schoenfeld 2016) und genug Wochenvolumen zusammenkommt (≥ 10 Sätze, Schoenfeld 2017).
+ * Deshalb wählt die App den einfachsten Split, der bei der MINDESTZAHL Tage jede Muskelgruppe ≥ 2× trifft:
+ * 2–3 Tage Ganzkörper, ab 4 Tagen Ober-/Unterkörper. Push/Pull/Beine erreicht 2× erst ab 6 Tagen
+ * und wird nur auf ausdrücklichen Wunsch genutzt.
+ */
 export function splitFor(settings) {
   const choice = settings.training?.block?.split ?? 'auto';
-  const p = settings.profile ?? {};
-  const days = String(p.daysPerWeek ?? '3');
-  if (choice === 'gk') return { scheme: days === '2' ? 'gk2' : 'gk', auto: false };
+  const days = minDays(settings.profile?.daysPerWeek);
+  if (choice === 'gk') return { scheme: days <= 2 ? 'gk2' : 'gk', auto: false };
   if (choice === 'okuk' || choice === 'ppl') return { scheme: choice, auto: false };
-  const beginner = p.experience === 'anfaenger';
-  let scheme;
-  if (days === '2') scheme = 'gk2';
-  else if (days === '3') scheme = 'gk';
-  else if (days === '3–4') scheme = beginner ? 'gk' : 'okuk';
-  else if (days === '4') scheme = 'okuk';
-  else scheme = beginner ? 'okuk' : 'ppl'; // 5+
-  return { scheme, auto: true };
+  return { scheme: days <= 2 ? 'gk2' : days === 3 ? 'gk' : 'okuk', auto: true };
+}
+
+/** Kurztext zur Häufigkeit, mit Warnung unter 2× pro Woche. */
+export function frequencyText(scheme, daysPerWeek) {
+  const days = minDays(daysPerWeek);
+  const f = weeklyFrequency(scheme, days);
+  const txt = `jede Muskelgruppe ca. ${String(Math.round(f * 10) / 10).replace('.', ',')}× pro Woche bei ${days} Einheiten`;
+  return f < 2 ? `${txt} – weniger als die empfohlenen 2×. Mehr Trainingstage oder einen anderen Split wählen.` : txt;
 }
 
 function phaseFor(week, weeks) {
@@ -127,6 +145,7 @@ export function blockState(settings, sessions = [], now = Date.now()) {
     rirAdd: P.rirAdd ?? 0, mainSets: P.mainSets ?? 0, loadPct: P.loadPct ?? 1,
     start: dayKey(start), weekStart: dayKey(thisMon), untilDeload: phase === 'deload' ? 0 : weeks - week,
     scheme, schemeLabel: SPLITS[scheme].label, autoSplit: auto, rotation: rot,
+    freq: weeklyFrequency(scheme, minDays(settings.profile?.daysPerWeek)), freqText: frequencyText(scheme, settings.profile?.daysPerWeek),
     dayIdx, dayId: rot[dayIdx], day: DAYS[rot[dayIdx]], doneThisWeek, hint: '',
   };
   st.hint = deloadHint(st, done, settings.profile, now);
@@ -172,7 +191,7 @@ export function blockText(st, today = null) {
   const L = [
     `Block ${st.blockNo}, Woche ${st.week} von ${st.weeks} (letzte Woche = Deload) – Phase: ${st.label}${st.forced ? ' (vorgezogen)' : ''}`,
     `Vorgabe der Phase: ${st.rule}`,
-    `Split: ${st.schemeLabel}. Heute laut Plan: ${t.day.label} (${t.day.focus})${t.changed ? ' – auf Wunsch im Check-in geändert' : ''}.`,
+    `Split: ${st.schemeLabel} (${st.freqText}). Heute laut Plan: ${t.day.label} (${t.day.focus})${t.changed ? ' – auf Wunsch im Check-in geändert' : ''}.`,
     `Einheiten diese Woche bisher: ${st.doneThisWeek}`,
   ];
   if (!st.deload) L.push(`Nächster Deload in ${st.untilDeload} Woche${st.untilDeload === 1 ? '' : 'n'}.`);

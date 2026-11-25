@@ -96,7 +96,7 @@ function blockHtml() {
     <div class="row" style="gap:4px;margin:10px 0 8px">${segs}</div>
     <div class="tiny muted">${esc(b.text)}</div>
     <div class="small" style="margin-top:10px">Heute dran: <b>${esc(b.day.label)}</b> <span class="muted">· ${esc(b.day.focus)}</span></div>
-    <div class="tiny faint" style="margin-top:4px">${esc(b.schemeLabel)}${b.autoSplit ? ' (automatisch)' : ''} · diese Woche ${b.doneThisWeek} von ${esc(target)} Einheiten${b.deload ? '' : ` · Deload in ${b.untilDeload} Woche${b.untilDeload === 1 ? '' : 'n'}`}</div>
+    <div class="tiny faint" style="margin-top:4px">${esc(b.schemeLabel)}${b.autoSplit ? ' (automatisch)' : ''} · ${b.freq < 2 ? '⚠︎ ' : ''}${esc(String(Math.round(b.freq * 10) / 10).replace('.', ','))}× pro Muskel/Woche · diese Woche ${b.doneThisWeek} von ${esc(target)} Einheiten${b.deload ? '' : ` · Deload in ${b.untilDeload} Woche${b.untilDeload === 1 ? '' : 'n'}`}</div>
     ${b.hint ? `<div class="pill-note" style="margin-top:10px;color:var(--warn)">${esc(b.hint)}</div><button class="btn sm block" data-act="deload-now" style="margin-top:8px">Deload diese Woche</button>` : ''}
   </div>`;
 }
