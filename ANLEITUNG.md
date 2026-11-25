@@ -100,6 +100,9 @@ Es sind allgemeine Empfehlungen, keine medizinische oder Ernährungsberatung.
 iPhone-**Kurzbefehl** Ruhepuls, HRV, Schlaf, Gewicht und Schritte aus Health und kopiert sie. Im Check-in tippst du auf
 **❤️ Werte aus Apple Health holen**: Die Werte landen im Check-in, das Gewicht im Profil. Die Schritt-für-Schritt-Anleitung
 für den Kurzbefehl steht in der App unter *Einstellungen → Apple Health*. Optional läuft der Kurzbefehl jeden Morgen automatisch.
+Jeder Health-Import und jeder Check-in beim Planen wird pro Tag gespeichert (auch Gewichtsänderungen aus Profil oder Chat).
+Unter *Fortschritt → Körperwerte* siehst du Ruhepuls, HRV, Schlaf, Schritte, Aktivkalorien und Gewicht als Verlauf
+(30/90/365 Tage) mit Ø 7 Tage und Trend. Die Werte sind Teil der Sicherung.
 
 **Übungsanleitungen:** Zu jeder Übung gibt es eine kurze Anleitung mit **Animation** (Strichfigur mit Hantel/Gerät),
 den wichtigsten Schritten und typischen Fehlern. Die App schlägt sie von selbst vor (💡), wenn eine Übung **neu für dich** ist
