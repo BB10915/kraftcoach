@@ -11,6 +11,7 @@ import { fmtNum, clamp } from '../util.js';
 import { checkinText, REGIONS, readiness, LEVEL_TEXT } from '../data/goals.js';
 import { profileText } from '../data/profile.js';
 import { nutritionTargets, targetsText } from '../logic/daycoach.js';
+import { blockState, blockText, blockTag, dayForToday } from '../logic/block.js';
 
 const H = 3600000;
 
@@ -77,7 +78,8 @@ Regeln:
 - Bewegungsmuster bei Hauptübungen gelegentlich variieren, aber bekannte Übungen für den Fortschritt öfter wiederholen.
 - Richte Wiederholungsbereiche, Volumen und Finisher an den ZIELEN aus (z. B. Stärker werden: Hauptübungen 4–6 Wdh.; Muskelaufbau: 6–12 Wdh.; Fitter werden/Fett abbauen: längerer Finisher; Beweglicher/Gesund: längeres Mobility-Aufwärmen).
 - TAGESFORM beachten: Bei niedriger Energie oder schlechtem Schlaf weniger Sätze und Ziel-RIR +1. Muskelkater-Bereiche nur leicht belasten. SCHMERZ-Bereiche komplett meiden. Bei guter Form darf es etwas mehr sein. Einen Wunsch (z. B. Fokus Oberkörper) umsetzen, wenn die Erholung es erlaubt.
-- Erwähne in der begruendung kurz, wie du Ziele und Tagesform berücksichtigt hast.
+- TRAININGSBLOCK (Mehrwochenplanung): Halte dich an den Split-Tag von heute (nur dessen Muskelgruppen, z. B. am Oberkörper-Tag keine Beinübungen) und an die Vorgabe der Phase (Einstieg/Aufbau/Intensiv/Deload). Der Split folgt der Studienlage (jede Muskelgruppe mind. 2× pro Woche, ca. 10–20 Arbeitssätze pro Muskel und Woche; Split und Ganzkörper sind bei gleichem Volumen gleichwertig) – keine Trend-Splits wie Bro-Split. Tagesform und Schmerzen haben Vorrang: Ist der Split-Tag heute nicht sinnvoll machbar, plane Ganzkörper nach Erholung und sag kurz warum. In der Deload-Woche bekannte Übungen wiederholen, keine neuen.
+- Erwähne in der begruendung kurz, wie du Ziele, Tagesform und Blockwoche berücksichtigt hast.
 - Schreibe auf Deutsch, Hinweise kurz (Technik, Tempo, Fokus).
 TAGESPLAN (Feld tag): Plane zusätzlich den ganzen Tag rund um das Training – Abschnitte morgen, vor, training, nach, abend mit je 2–5 kurzen, konkreten Punkten (mit Uhrzeiten aus dem TAGESABLAUF).
 - Nutze die berechneten TAGESZIELE (Kalorien, Protein, Wasser) – erfinde keine anderen Zahlen.
@@ -87,8 +89,10 @@ TAGESPLAN (Feld tag): Plane zusätzlich den ganzen Tag rund um das Training – 
 - Allgemeine Empfehlungen, keine Diagnosen oder medizinischen Ratschläge.`;
 
 /** Kompakte Zusammenfassung der Historie für den Prompt (spart Tokens). */
-export function buildPrompt({ settings, sessions, sets, budgetMin, now = Date.now(), checkin = null }) {
+export function buildPrompt({ settings, sessions, sets, budgetMin, now = Date.now(), checkin = null, block = null }) {
   const p = settings.profile;
+  const blk = block ?? blockState(settings, sessions, now);
+  const today = dayForToday(blk, checkin);
   const bw = p.bodyweight || 80;
   // Übungen für Schmerzbereiche gar nicht erst anbieten.
   const painM = new Set((checkin?.pain ?? []).flatMap((r) => REGIONS[r]?.muscles ?? []));
@@ -141,6 +145,9 @@ TAGESFORM (Check-in, tagesaktuell)
 ${checkinText(checkin)}
 Bewertung: ${LEVEL_TEXT[ready.level][0]}${ready.reasons.length ? ` (${ready.reasons.join(', ')})` : ''}
 
+TRAININGSBLOCK
+${blockText(blk, today)}
+
 TAGESZIELE (berechnet)
 ${targetsText(nutritionTargets(p, { trainingMin: budgetMin, checkin }))}
 
@@ -161,13 +168,15 @@ ${catalog}`;
 
   return {
     prompt,
+    block: blk,
+    today,
     allowedIds: allowed.filter((e) => !e.timed).map((e) => e.id),
     cardioIds: allowed.filter((e) => e.kind === 'cardio').map((e) => e.id),
   };
 }
 
 /** Prüft die KI-Antwort und macht daraus Plan-Einträge. Wirft bei Unbrauchbarkeit. */
-export function convertPlan(raw, { settings, budgetMin, allowedIds, cardioIds }) {
+export function convertPlan(raw, { settings, budgetMin, allowedIds, cardioIds, block = null }) {
   const errs = validate(planSchema(allowedIds, cardioIds), raw);
   // Unbekannte Übungen tolerieren wir (werden verworfen), alles andere ist ein harter Fehler.
   // Fehler im Tagesplan (tag) sind weich: dann nimmt die App ihren lokalen Tagesplan.
@@ -191,6 +200,18 @@ export function convertPlan(raw, { settings, budgetMin, allowedIds, cardioIds })
       sets: u.saetze, repsMin: lo, repsMax: hi === lo ? lo + 2 : hi, rir: clamp(u.zielRir, 0, 3), restSec: u.pauseSek, note: u.hinweis ?? '',
     }));
   }
+  // Deload absichern, falls die KI zu viel plant: wenig Sätze, viel Reserve, leichter.
+  if (block?.deload) {
+    let acc = 0;
+    for (let i = items.length - 1; i >= 0; i--) {
+      const it = items[i];
+      if (it.kind !== 'strength') continue;
+      if (it.role === 'accessory' && ++acc > 2) { items.splice(i, 1); continue; }
+      it.sets = Math.min(it.sets, it.role === 'main' ? 3 : 2);
+      it.rir = Math.max(it.rir, 3);
+      it.loadPct = block.loadPct;
+    }
+  }
   if (items.filter((i) => i.kind === 'strength').length < 2) throw new AiError('invalid', 'Die KI hat zu wenige gültige Übungen geliefert.');
 
   const fin = raw.finisher;
@@ -200,21 +221,35 @@ export function convertPlan(raw, { settings, budgetMin, allowedIds, cardioIds })
   return { title: raw.titel || 'Training', rationale: raw.begruendung || '', items: fitToBudget(items, budgetMin * 60), dayAi };
 }
 
+/** Hat die KI den Split-Tag eingehalten? Sonst zählt die Einheit nicht für die Rotation. */
+export function matchesDay(items, day) {
+  if (!day?.regions) return true;
+  const st = items.filter((i) => i.kind === 'strength');
+  const inDay = st.filter((i) => day.regions.includes(PATTERNS[getEx(i.exerciseId).pattern]?.region)).length;
+  return st.length > 0 && inDay / st.length >= 0.75;
+}
+
 /**
  * Plan holen: erst KI, bei Fehlern lokaler Ersatzplan.
  * @returns {{title, rationale, items, source:'ai'|'local', fallbackReason?:AiError}}
  */
-export async function makePlan({ settings, sessions, sets, budgetMin, useAi = true, checkin = null }) {
-  const local = () => ({ ...planLocal({ settings, sets, budgetMin, checkin }), source: 'local' });
+export async function makePlan({ settings, sessions, sets, budgetMin, useAi = true, checkin = null, now = Date.now() }) {
+  const block = blockState(settings, sessions, now);
+  const regen = checkin?.wish === 'regen';
+  const local = () => {
+    const pl = planLocal({ settings, sets, budgetMin, checkin, block, now });
+    return { ...pl, source: 'local', block: blockTag(block, { dayId: pl.dayId, dayIdx: pl.dayIdx, regen: regen || pl.dayId == null }) };
+  };
   // Regenerationstag braucht keine KI-Anfrage (spart Kontingent).
-  if (!useAi || !settings.ai.enabled || !settings.ai.apiKey || checkin?.wish === 'regen') return local();
-  const ctx = buildPrompt({ settings, sessions, sets, budgetMin, checkin });
+  if (!useAi || !settings.ai.enabled || !settings.ai.apiKey || regen) return local();
+  const ctx = buildPrompt({ settings, sessions, sets, budgetMin, checkin, block, now });
   const schema = planSchema(ctx.allowedIds, ctx.cardioIds);
   let lastErr;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const raw = await generateJson({ apiKey: settings.ai.apiKey, model: settings.ai.model, system: SYSTEM, prompt: ctx.prompt, schema });
-      return { ...convertPlan(raw, { settings, budgetMin, ...ctx }), source: 'ai' };
+      const plan = convertPlan(raw, { settings, budgetMin, ...ctx });
+      return { ...plan, source: 'ai', block: blockTag(block, { dayId: ctx.today.dayId, dayIdx: ctx.today.dayIdx, regen: !matchesDay(plan.items, ctx.today.day) }) };
     } catch (e) {
       lastErr = e instanceof AiError ? e : new AiError('server', String(e?.message ?? e));
       if (lastErr.kind !== 'invalid') break; // nur ungültige Antworten einmal wiederholen

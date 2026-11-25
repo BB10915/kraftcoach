@@ -5,6 +5,7 @@ import { REGIONS, fatigueLevel } from '../data/goals.js';
 import { muscleStatus, lastUsedMap } from './history.js';
 import { itemSec, sessionSec, fitToBudget } from './timing.js';
 import { uid, clamp } from '../util.js';
+import { DAYS, dayForToday } from './block.js';
 
 const WEEKLY_TARGET = 10; // Arbeitssätze pro Muskel und Woche (allgemeine Fitness)
 
@@ -87,11 +88,14 @@ const musclesOf = (regions = []) => new Set(regions.flatMap((r) => REGIONS[r]?.m
 /**
  * Plan erstellen.
  * checkin = { energy, sleep, sore:[Region], pain:[Region], wish }
- * @returns {{title, rationale, items}}
+ * block = Stand im Trainingsblock (siehe logic/block.js) – optional; ohne Block wie früher Ganzkörper.
+ * @returns {{title, rationale, items, dayId?, dayIdx?}}
  */
-export function planLocal({ settings, sets, budgetMin, now = Date.now(), checkin = null }) {
+export function planLocal({ settings, sets, budgetMin, now = Date.now(), checkin = null, block = null }) {
   const profile = settings.profile;
   if (checkin?.wish === 'regen') return planRecovery({ settings, sets, budgetMin });
+  if (block?.deload) return deloadOf(planLocal({ settings, sets, budgetMin, now, checkin, block: { ...block, deload: false, rirAdd: 0, mainSets: 0 } }), block);
+  const today = block ? dayForToday(block, checkin) : null;
   const goals = profile.goals ?? [];
   const painM = musclesOf(checkin?.pain);
   const soreM = musclesOf(checkin?.sore);
@@ -101,6 +105,13 @@ export function planLocal({ settings, sets, budgetMin, now = Date.now(), checkin
   for (const m of painM) status[m].readiness = 0;
   for (const m of soreM) status[m].readiness *= 0.4;
   const sc = patternScores(status);
+  // Split-Tag: Muster außerhalb der Tagesregionen kommen heute nicht dran.
+  let day = today?.day ?? DAYS.gkC;
+  const splitSc = (d) => {
+    const out = { ...sc };
+    if (d.regions) for (const [p, def] of Object.entries(PATTERNS)) if (out[p] != null && !d.regions.includes(def.region)) out[p] = 0;
+    return out;
+  };
   // Wunsch "Fokus Oberkörper / Beine"
   for (const [p, def] of Object.entries(PATTERNS)) {
     if (sc[p] == null) continue;
@@ -109,6 +120,7 @@ export function planLocal({ settings, sets, budgetMin, now = Date.now(), checkin
     // Priorisierte Muskelgruppen aus dem Profil etwas bevorzugen
     if (def.muscles?.some((m) => profile.aims?.priority?.includes(m))) sc[p] *= 1.25;
   }
+  let dsc = splitSc(day);
   const fatigue = fatigueLevel(checkin, profile);
   const lastUsed = lastUsedMap(sets);
   const known = new Set(Object.keys(profile.baselines ?? {}));
@@ -126,11 +138,23 @@ export function planLocal({ settings, sets, budgetMin, now = Date.now(), checkin
   // 2) Hauptübungen: je ein Muster für Beine, Drücken, Ziehen
   // Kleiner Bonus für Muster mit bekannten Übungen (Historie oder Startwert) – gut für den Fortschritt.
   const knownBonus = (p) => (allowed.some((e) => e.pattern === p && (known.has(e.id) || lastUsed.has(e.id))) ? 0.05 : 0);
-  const best = (ps) => ps.filter((p) => sc[p] != null && allowed.some((e) => e.pattern === p)).sort((a, b) => sc[b] + knownBonus(b) - (sc[a] + knownBonus(a)))[0];
-  const lower = best(['squat', 'hinge']);
-  const push = best(['hpush', 'vpush']);
-  const pull = best(['hpull', 'vpull']);
-  let mains = [lower, push, pull].filter(Boolean).sort((a, b) => sc[b] - sc[a]);
+  // Bevorzugtes Muster des Split-Tags (z. B. Ganzkörper A = Kniebeuge) bekommt einen Bonus.
+  const pickMains = (d, s) => {
+    const best = (ps) => ps.filter((p) => s[p] != null && allowed.some((e) => e.pattern === p))
+      .sort((a, b) => s[b] + knownBonus(b) + (d.prefer && b === ps[0] ? 0.15 : 0) - (s[a] + knownBonus(a) + (d.prefer && a === ps[0] ? 0.15 : 0)))[0];
+    return [...new Set(d.mains.map(best).filter(Boolean))];
+  };
+  let mainList = pickMains(day, dsc);
+  // Split-Tag nicht machbar (z. B. Schmerzen)? Dann Ganzkörper nach Erholung.
+  let dayFallback = false;
+  if (mainList.length < 2 && day !== DAYS.gkC) {
+    day = DAYS.gkC;
+    dsc = splitSc(day);
+    mainList = pickMains(day, dsc);
+    dayFallback = true;
+  }
+  for (const k of Object.keys(sc)) sc[k] = dsc[k];
+  let mains = mainList.sort((a, b) => sc[b] - sc[a]);
   // Kaum erholte Bereiche heute nicht als Hauptübung (aber mindestens zwei Hauptübungen).
   const rested = mains.filter((p) => sc[p] >= 0.3);
   mains = rested.length >= 2 ? rested : mains.slice(0, 2);
@@ -170,7 +194,14 @@ export function planLocal({ settings, sets, budgetMin, now = Date.now(), checkin
     let setsN = role === 'main' && budgetMin >= 60 ? 4 : 3;
     if (fatigue >= 1) setsN = role === 'main' ? 3 : 2;
     if (fatigue < 0 && role === 'main') setsN += 1;
-    const it = { ...base, sets: setsN, rir: fatigue >= 1 ? Math.min(3, base.rir + 1) : base.rir };
+    let rir = fatigue >= 1 ? Math.min(3, base.rir + 1) : base.rir;
+    // Periodisierung: Phase im Block (Einstieg/Aufbau/Intensiv)
+    if (block) {
+      // Extra-Satz nur, wenn genug Zeit da ist – sonst würde er andere Übungen verdrängen.
+      if (role === 'main' && budgetMin >= 50) setsN = Math.min(5, setsN + block.mainSets);
+      if (role !== 'accessory' || block.rirAdd > 0) rir = clamp(rir + block.rirAdd, role === 'accessory' ? 0 : 1, 3);
+    }
+    const it = { ...base, sets: setsN, rir };
     // Hauptübungen haben Vorrang (notfalls kürzt fitToBudget unten Finisher/Sätze),
     // alles andere nur, wenn es noch ins Budget passt.
     if (role !== 'main' && sessionSec([...items, it]) + reserve > fillSec + 60) continue;
@@ -186,12 +217,35 @@ export function planLocal({ settings, sets, budgetMin, now = Date.now(), checkin
   const fitted = fitToBudget(items, budgetSec);
   const mainNames = fitted.filter((i) => i.role === 'main').map((i) => PATTERNS[getEx(i.exerciseId).pattern].label);
   const notes = [];
+  if (block) {
+    const dl = day.label + (dayFallback ? ' (statt ' + (today.day.label) + ', weil der geplante Tag heute nicht machbar ist)' : today.changed ? ' (Wunsch aus dem Check-in)' : '');
+    notes.push(`Woche ${block.week}/${block.weeks} · ${block.label}: ${block.text} Heute: ${dl}.`);
+  }
   if (mainNames.length) notes.push(`Schwerpunkt: ${mainNames.join(', ')}.`);
   if (painM.size) notes.push(`Schmerzbereiche (${checkin.pain.map((r) => REGIONS[r].label).join(', ')}) werden heute ausgelassen.`);
   if (fatigue >= 1) notes.push('Tagesform eher niedrig → weniger Sätze, etwas mehr Reserve (RIR), Einheit etwas kürzer.');
   if (fatigue < 0) notes.push('Gute Tagesform → ein Satz mehr bei den Hauptübungen.');
   notes.push(lowReady.length ? `Noch in Erholung: ${lowReady.join(', ')}.` : 'Alle Muskeln gut erholt.');
-  return { title: titleFor(fitted), rationale: notes.join(' '), items: fitted };
+  const title = block && !dayFallback ? day.label : titleFor(fitted);
+  const dayIdx = block ? (dayFallback ? null : today.dayIdx) : null;
+  const dayId = block && !dayFallback ? (today.changed ? today.dayId : block.dayId) : null;
+  return { title, rationale: notes.join(' '), items: fitted, dayId, dayIdx };
+}
+
+/**
+ * Deload aus einem normalen Plan: gleiche Übungen, etwa halbes Volumen,
+ * höchstens 2 Isolationsübungen, RIR 3 und rund 10 % weniger Last.
+ */
+export function deloadOf(plan, block) {
+  let acc = 0;
+  const items = [];
+  for (const it of plan.items) {
+    if (it.kind !== 'strength') { items.push(it); continue; }
+    if (it.role === 'accessory' && ++acc > 2) continue;
+    items.push({ ...it, sets: Math.max(it.role === 'main' ? 2 : 1, Math.ceil(it.sets / 2)), rir: Math.max(3, it.rir), loadPct: block.loadPct ?? 0.9 });
+  }
+  // Begründung stammt schon aus dem Plan mit Deload-Phase (Woche x/y · Deload: …).
+  return { ...plan, title: `${plan.title} · Deload`, items };
 }
 
 export function titleFor(items) {
