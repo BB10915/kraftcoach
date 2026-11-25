@@ -6,20 +6,22 @@ import { getEx, MUSCLES } from '../data/exercises.js';
 import { computePRs, weeklyVolume, weekStreak, trainingDays, bestsFor } from '../logic/stats.js';
 import { progressRadar, FITNESS_AXES, STRENGTH_AXES } from '../logic/radar.js';
 import { radarSvg } from './radar.js';
+import { METRICS, METRIC_KEYS, seriesOf, summaryOf } from '../logic/bodylog.js';
+import { lineChart, bindCharts } from './chart.js';
 import { confirmSheet, toast, ICONS } from '../ui.js';
-import { esc, fmtNum, fmtDate, fmtMin, dayKey, startOfWeek, DAY, MONTHS_LONG } from '../util.js';
+import { esc, fmtNum, fmtDate, fmtDateShort, fmtMin, dayKey, startOfWeek, DAY, MONTHS_LONG } from '../util.js';
 
 const TARGET = [6, 12]; // empfohlene Arbeitssätze pro Muskel und Woche (allgemeine Fitness)
 let weekOffset = 0;
 let radarView = 'fitness'; // fitness | strength
 
 const NO_DATA = {
-  recovery: 'Noch zu wenig Daten: ab 3 Check-ins mit Ruhepuls, HRV oder Schlaf in 4 Wochen.',
+  recovery: 'Noch zu wenig Daten: ab 3 Tagen mit Ruhepuls, HRV oder Schlaf in den letzten 4 Wochen.',
   strength: 'Noch keine passende Übung in den letzten 6 Wochen.',
 };
 
 function radarHtml(bw) {
-  const r = progressRadar({ sessions: S.sessions, sets: S.sets, profile: S.settings.profile });
+  const r = progressRadar({ sessions: S.sessions, sets: S.sets, profile: S.settings.profile, body: S.body });
   const fit = radarView === 'fitness';
   const axes = fit ? FITNESS_AXES : STRENGTH_AXES;
   const { now, before } = fit ? r.fitness : r.strength;
@@ -45,6 +47,8 @@ function radarHtml(bw) {
       ? '100 = Ziel erreicht. Kraft zählt das beste e1RM der letzten 6 Wochen, alles andere die letzten 4 Wochen. Tippe auf „Kraft“ für die einzelnen Übungen.'
       : 'Bestes geschätztes 1RM der letzten 6 Wochen geteilt durch dein Körpergewicht. Verwandte Übungen (z. B. Kurzhantel-Bankdrücken, Latziehen) werden umgerechnet.'}</p>`;
 }
+let bodyKey = 'hr';
+let bodyDays = 30;
 
 function calendarHtml(days) {
   const now = new Date();
@@ -79,11 +83,71 @@ function volumeHtml() {
     <p class="tiny muted" style="margin:10px 0 0">Arbeitssätze je Muskel (Hauptmuskel 1, mitbeteiligt ½). Heller Bereich = Ziel ${TARGET[0]}–${TARGET[1]} Sätze.</p>`;
 }
 
+// ---------- Körperwerte ----------
+
+const fmtM = (k, v) => (v == null ? '–' : k === 'steps' || k === 'activeKcal' ? Math.round(v).toLocaleString('de-DE') : fmtNum(v, METRICS[k].digits));
+const withUnit = (k, v) => `${fmtM(k, v)}${METRICS[k].unit && v != null ? '\u00a0' + METRICS[k].unit : ''}`;
+const TREND = { gut: ['besser', 'var(--accent)'], schlecht: ['schlechter', 'var(--warn)'], gleich: ['stabil', 'var(--muted)'], auf: ['steigt', 'var(--text)'], ab: ['sinkt', 'var(--text)'] };
+
+function bodyHtml() {
+  const log = S.body;
+  if (!log.some((e) => METRIC_KEYS.some((k) => e[k] != null))) {
+    return `<div class="card empty small"><p style="margin:0">Noch keine Körperwerte gespeichert.<br>Hol dir auf <a href="#/heute">Heute</a> die Werte aus Apple Health oder trag Ruhepuls und Schlaf im Check-in ein. Ab dann landet jeder Tag hier.</p></div>`;
+  }
+  const have = METRIC_KEYS.filter((k) => log.some((e) => e[k] != null));
+  if (!have.includes(bodyKey)) bodyKey = have[0];
+  const m = METRICS[bodyKey];
+  const sum = summaryOf(log, bodyKey);
+  const pts = seriesOf(log, bodyKey, { days: bodyDays }).map((p) => ({ ...p, label: `${fmtDateShort(p.x)}: ${withUnit(bodyKey, p.y)}` }));
+  const [tl, tc] = TREND[sum.trend] ?? ['–', 'var(--muted)'];
+  const delta = sum.delta == null ? '' : ` (${sum.delta > 0 ? '+' : '−'}${fmtM(bodyKey, Math.abs(sum.delta))})`;
+  const kp = (v, l, style = '') => `<div class="kpi"><b class="num" style="${style}">${v}</b><span>${l}</span></div>`;
+  const recent = [...log].reverse().slice(0, 7);
+  return `<div class="card">
+    <div class="chips">${have.map((k) => `<button class="chip ${k === bodyKey ? 'on' : ''}" data-act="body-key" data-k="${k}">${METRICS[k].label}</button>`).join('')}</div>
+    <div class="kpis four" style="grid-template-columns:repeat(3,1fr);margin:12px 0">
+      ${kp(withUnit(bodyKey, sum.last?.value), sum.last ? `zuletzt · ${sum.last.day === dayKey(Date.now()) ? 'heute' : fmtDateShort(new Date(sum.last.day + 'T12:00'))}` : 'zuletzt')}
+      ${kp(fmtM(bodyKey, sum.avg7), 'Ø 7 Tage')}
+      ${kp(tl, `Trend${esc(delta)}`, `color:${tc}`)}
+    </div>
+    ${lineChart(pts, { unit: m.unit || m.label, empty: `Ab zwei Tagen mit ${m.label}-Wert erscheint hier der Verlauf.` })}
+    <div class="chips" style="justify-content:center;margin-top:8px">${[[30, '30 Tage'], [90, '90 Tage'], [365, '1 Jahr']].map(([d, l]) => `<button class="chip ${d === bodyDays ? 'on' : ''}" data-act="body-days" data-d="${d}">${l}</button>`).join('')}</div>
+    <p class="tiny muted" style="margin:10px 0 0">Trend: Ø der letzten 7 Tage gegenüber den 3 Wochen davor.${m.better === 'down' ? ' Beim Ruhepuls ist niedriger besser.' : ''}</p>
+  </div>
+  <div class="card tight">${recent.map((e) => {
+    const vals = METRIC_KEYS.filter((k) => e[k] != null).map((k) => `${METRICS[k].label} ${withUnit(k, e[k])}`);
+    const self = [e.energy && `Energie ${e.energy}`, e.sleep && `Schlaf ${e.sleep}`, e.stress && `Stress ${e.stress}`].filter(Boolean);
+    return `<div class="plan-item"><div class="grow"><div class="name">${fmtDate(new Date(e.day + 'T12:00'))}</div>
+      <div class="meta">${esc([...vals, ...self].join(' · ') || '–')}</div></div>
+      <button class="icon-btn" data-act="body-del" data-day="${esc(e.day)}" aria-label="Tageswerte löschen">${ICONS.x}</button></div>`;
+  }).join('')}</div>`;
+}
+
+async function bodyClick(act, el, rerender) {
+  if (act === 'body-key') { bodyKey = el.dataset.k; return rerender(), true; }
+  if (act === 'body-days') { bodyDays = +el.dataset.d; return rerender(), true; }
+  if (act === 'body-del') {
+    if (await confirmSheet('Tageswerte löschen?', `Die Körperwerte vom ${fmtDate(new Date(el.dataset.day + 'T12:00'))} werden gelöscht.`, 'Löschen', { danger: true })) {
+      await store.deleteBodyDay(el.dataset.day);
+      toast('Tageswerte gelöscht');
+      rerender();
+    }
+    return true;
+  }
+  return false;
+}
+
 export function render(root, route, app) {
   const done = store.doneSessions();
   const bw = S.settings.profile.bodyweight || 80;
   if (!done.length) {
-    root.innerHTML = `<div class="page-head"><h1>Fortschritt</h1></div><div class="card empty"><p>Noch keine abgeschlossenen Einheiten.<br>Nach dem ersten Training siehst du hier Verlauf, Rekorde und Wochenvolumen.</p><a class="btn primary" href="#/heute">Zum Tagesplan</a></div>`;
+    root.innerHTML = `<div class="page-head"><h1>Fortschritt</h1></div><div class="card empty"><p>Noch keine abgeschlossenen Einheiten.<br>Nach dem ersten Training siehst du hier Verlauf, Rekorde und Wochenvolumen.</p><a class="btn primary" href="#/heute">Zum Tagesplan</a></div>
+  <h2>Körperwerte</h2>${bodyHtml()}`;
+    bindCharts(root);
+    root.onclick = (e) => {
+      const el = e.target.closest('[data-act]');
+      if (el) bodyClick(el.dataset.act, el, () => render(root, route, app));
+    };
     return;
   }
   const minWeek = parseInt(String(S.settings.profile.daysPerWeek), 10) || 3;
@@ -109,6 +173,9 @@ export function render(root, route, app) {
 
   <h2>Dein Profil</h2>
   <div class="card">${radarHtml(bw)}</div>
+
+  <h2>Körperwerte</h2>
+  ${bodyHtml()}
 
   <h2>Wochenvolumen pro Muskelgruppe</h2>
   <div class="card">${volumeHtml()}</div>
@@ -138,10 +205,12 @@ export function render(root, route, app) {
   }).join('')}</div>
   <p class="tiny faint" style="text-align:center">${MONTHS_LONG[new Date().getMonth()]} ${new Date().getFullYear()}</p>`;
 
+  bindCharts(root);
   root.onclick = async (e) => {
     const el = e.target.closest('[data-act]');
     if (!el) return;
     const act = el.dataset.act;
+    if (await bodyClick(act, el, () => render(root, route, app))) return;
     if (act === 'ex') return app.go(`#/uebung/${encodeURIComponent(el.dataset.id)}`);
     if (act === 'radar' || act === 'radar-axis') { radarView = el.dataset.v ?? 'strength'; return render(root, route, app); }
     if (act === 'wk-prev') { weekOffset--; return render(root, route, app); }

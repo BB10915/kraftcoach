@@ -6,8 +6,8 @@ import { esc, fmtNum, fmtDateShort } from '../util.js';
  * points: [{ x: ts, y: number, label: string }]
  * Gibt HTML zurück; danach bindChart(root) aufrufen.
  */
-export function lineChart(points, { height = 200, unit = 'kg', id = 'c' } = {}) {
-  if (points.length < 2) return '<div class="empty small">Ab zwei Einheiten erscheint hier der Verlauf.</div>';
+export function lineChart(points, { height = 200, unit = 'kg', id = 'c', empty = 'Ab zwei Einheiten erscheint hier der Verlauf.' } = {}) {
+  if (points.length < 2) return `<div class="empty small">${esc(empty)}</div>`;
   const W = 340, H = height, L = 36, R = 10, T = 12, B = 24;
   const xs = points.map((p) => p.x), ys = points.map((p) => p.y);
   const x0 = Math.min(...xs), x1 = Math.max(...xs);

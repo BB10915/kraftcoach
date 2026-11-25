@@ -64,8 +64,11 @@ export function checkinText(c) {
   if (!c) return 'kein Check-in';
   const parts = [`Energie ${c.energy}`, `Schlaf ${c.sleep}${c.sleepH ? ` (${label(SLEEP_H, c.sleepH)})` : ''}`];
   if (c.stress) parts.push(`Stress ${c.stress}`);
-  if (c.hr) parts.push(`Ruhepuls ${c.hr}`);
-  if (c.hrv) parts.push(`HRV ${c.hrv} ms`);
+  const b = c.base;
+  if (c.hr) parts.push(`Ruhepuls ${c.hr}${b?.hr ? ` (normal ~${b.hr}${b.hrSrc === 'schnitt' ? `, Schnitt ${b.n?.hr} Tage` : ''})` : ''}`);
+  if (c.hrv) parts.push(`HRV ${c.hrv} ms${b?.hrv ? ` (normal ~${b.hrv} ms${b.hrvSrc === 'schnitt' ? `, Schnitt ${b.n?.hrv} Tage` : ''})` : ''}`);
+  if (b?.yesterday?.steps != null) parts.push(`gestern ${b.yesterday.steps} Schritte`);
+  if (b?.yesterday?.sleepH) parts.push(`Nacht davor ${b.yesterday.sleepH} h Schlaf`);
   if (c.sore?.length) parts.push(`Muskelkater: ${c.sore.map((r) => REGIONS[r]?.label).join(', ')}`);
   if (c.pain?.length) parts.push(`SCHMERZEN (meiden!): ${c.pain.map((r) => REGIONS[r]?.label).join(', ')}`);
   if (c.lastMeal) parts.push(`letzte Mahlzeit vor ${label(LAST_MEAL, c.lastMeal)}`);
@@ -80,7 +83,8 @@ export function checkinText(c) {
 }
 
 /**
- * Tagesform bewerten (statische Werte aus dem Profil als Vergleich, z. B. normaler Ruhepuls).
+ * Tagesform bewerten. Vergleichswerte: c.base (gleitender Schnitt der letzten Tage, siehe
+ * js/logic/baseline.js → readinessBase) oder, falls nicht vorhanden, die festen Profilwerte.
  * @returns {{points:number, level:'voll'|'normal'|'reduziert'|'regeneration', reasons:string[]}}
  */
 export function readiness(c, profile = {}) {
@@ -88,18 +92,46 @@ export function readiness(c, profile = {}) {
   const reasons = [];
   let pts = 0;
   const add = (n, why) => { pts += n; reasons.push(why); };
+  const base = c.base ?? {};
+  const f1 = (x) => String(Math.round(x * 10) / 10).replace('.', ',');
   if (c.energy === 'niedrig') add(1, 'wenig Energie');
-  // Schlaf: Qualität und Dauer zählen zusammen höchstens 2 Punkte
+  // Schlaf: Qualität, Dauer und die Nacht davor zählen zusammen höchstens 2 Punkte
   let sl = 0;
+  const why = [];
   if (c.sleep === 'schlecht') sl++;
   if (c.sleepH && c.sleepH <= 5) sl++;
   else if (c.sleepH === 6 && c.sleep !== 'gut') sl = Math.max(sl, 1);
-  if (sl) add(Math.min(2, sl), c.sleepH && c.sleepH <= 6 ? `nur ${c.sleepH} h Schlaf` : 'schlecht geschlafen');
+  if (sl) why.push(c.sleepH && c.sleepH <= 6 ? `nur ${c.sleepH} h Schlaf` : 'schlecht geschlafen');
+  else if (c.sleepH && base.sleepH && c.sleepH <= base.sleepH - 1.5) {
+    sl = 0.5;
+    why.push(`${c.sleepH} h Schlaf statt ~${f1(base.sleepH)} h wie sonst`);
+  }
+  const ySleep = base.yesterday?.sleepH;
+  const shortNow = sl >= 1 || (c.sleepH && c.sleepH <= 6);
+  if (ySleep && ySleep <= 6 && shortNow) {
+    sl += 0.5;
+    why.push(`schon die Nacht davor nur ${f1(ySleep)} h`);
+  } else if (ySleep && ySleep <= 5) {
+    sl += 0.5;
+    why.push(`Schlafdefizit von vorletzter Nacht (${f1(ySleep)} h)`);
+  }
+  if (sl) add(Math.min(2, sl), why.join(', '));
   if (c.stress === 'hoch') add(1, 'viel Stress');
-  const baseHr = +profile.body?.restingHr || 0;
-  if (c.hr && baseHr && c.hr >= baseHr + 7) add(1, `Ruhepuls erhöht (${c.hr} statt ~${baseHr})`);
-  const baseHrv = +profile.body?.hrv || 0;
-  if (c.hrv && baseHrv && c.hrv <= baseHrv * 0.8) add(1, `HRV niedrig (${c.hrv} statt ~${baseHrv} ms)`);
+  const baseHr = +(base.hr ?? profile.body?.restingHr) || 0;
+  const hrWord = c.base?.hrSrc === 'schnitt' ? 'Schnitt' : '';
+  if (c.hr && baseHr && c.hr >= baseHr + 7) add(1, `Ruhepuls erhöht (${c.hr} statt ~${baseHr}${hrWord ? ` im ${hrWord}` : ''})`);
+  else if (c.hr && baseHr && c.hr >= baseHr + 5) add(0.5, `Ruhepuls leicht erhöht (${c.hr} statt ~${baseHr}${hrWord ? ` im ${hrWord}` : ''})`);
+  const baseHrv = +(base.hrv ?? profile.body?.hrv) || 0;
+  const hrvWord = c.base?.hrvSrc === 'schnitt' ? ' im Schnitt' : '';
+  if (c.hrv && baseHrv && c.hrv <= baseHrv * 0.8) add(1, `HRV niedrig (${c.hrv} statt ~${baseHrv} ms${hrvWord})`);
+  else if (c.hrv && baseHrv && c.hrv <= baseHrv * 0.88) add(0.5, `HRV etwas niedriger (${c.hrv} statt ~${baseHrv} ms${hrvWord})`);
+  // Schritte von gestern: viel auf den Beinen → Beine und Gesamtvolumen etwas schonen
+  const ySteps = base.yesterday?.steps;
+  if (ySteps != null) {
+    const fmt = ySteps.toLocaleString('de-DE');
+    if (ySteps >= 20000) add(1, `gestern sehr viel auf den Beinen (${fmt} Schritte)`);
+    else if (ySteps >= 15000 || (ySteps >= 12000 && base.steps && ySteps >= base.steps * 1.8)) add(0.5, `gestern viel unterwegs (${fmt} Schritte)`);
+  }
   if (c.loads?.includes('sport') || c.loads?.includes('arbeit')) add(1, 'heute schon körperlich belastet');
   if (c.ate === 'wenig') add(0.5, 'bisher wenig gegessen');
   if (c.wish === 'locker') add(1, 'Wunsch: locker');

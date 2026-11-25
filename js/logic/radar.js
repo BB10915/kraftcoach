@@ -4,7 +4,8 @@
 import { getEx, MUSCLES } from '../data/exercises.js';
 import { setE1rm } from './e1rm.js';
 import { workSets } from './history.js';
-import { clamp, DAY } from '../util.js';
+import { dayTs } from './bodylog.js';
+import { clamp, dayKey, DAY } from '../util.js';
 
 export const COMPARE_DAYS = 56; // Vergleich mit dem Stand vor 8 Wochen
 const STRENGTH_WINDOW = 42; // bestes e1RM der letzten 6 Wochen zählt
@@ -67,7 +68,18 @@ function timedMinutes(sessions, kind) {
 }
 
 /**
- * Gesundheitswerte aus den Check-ins der Einheiten (bis es eine tägliche Speicherung gibt).
+ * Gesundheitswerte für die Achsen Erholung und Kondition:
+ * das Körperwerte-Tagebuch (S.body), ergänzt um Check-ins von Einheiten an Tagen ohne Tagebucheintrag.
+ * -> [{ ts, hr?, hrv?, sleepH?, steps? }]
+ */
+export function healthRecords(body = [], sessions = []) {
+  const days = new Set(body.map((e) => e.day));
+  const fromLog = body.map((e) => ({ ts: dayTs(e.day), hr: e.hr, hrv: e.hrv, sleepH: e.sleepH, steps: e.steps }));
+  return [...fromLog, ...healthFromSessions(sessions).filter((h) => !days.has(dayKey(h.ts)))];
+}
+
+/**
+ * Gesundheitswerte aus den Check-ins der Einheiten (ältere Daten vor dem Körperwerte-Tagebuch).
  * -> [{ ts, hr?, hrv?, sleepH?, steps? }]
  */
 export function healthFromSessions(sessions) {
@@ -82,14 +94,16 @@ export function healthFromSessions(sessions) {
   return out;
 }
 
-/** Erholung 0–100: HRV und Ruhepuls gegen Normalwert (Profil oder eigener Schnitt), Schlaf 8 h = 100. */
+/** Erholung 0–100: HRV und Ruhepuls gegen Normalwert (eigener Schnitt, sonst Profil), Schlaf 8 h = 100. */
 export function recoveryScore(health, profile = {}, from, to) {
   const recent = health.filter((h) => h.ts >= from && h.ts < to);
   if (recent.length < 3) return null;
   const all = health.filter((h) => h.ts < to);
   const avg = (list, k) => mean(list.map((h) => h[k] ?? null));
-  const baseHrv = profile.body?.hrv || avg(all, 'hrv');
-  const baseHr = profile.body?.restingHr || avg(all, 'hr');
+  // Normalwert: eigener Langzeitschnitt (ab 4 Messungen), sonst Profilangabe – wie bei der Tagesform
+  const own = (k) => (all.filter((h) => h[k] != null).length >= 4 ? avg(all, k) : null);
+  const baseHrv = own('hrv') ?? (profile.body?.hrv || null);
+  const baseHr = own('hr') ?? (profile.body?.restingHr || null);
   const hrv = avg(recent, 'hrv'), hr = avg(recent, 'hr'), sleep = avg(recent, 'sleepH');
   return round(mean([
     hrv && baseHrv ? 50 + (hrv / baseHrv - 1) * 250 : null, // +20 % über Normal = 100
@@ -99,12 +113,12 @@ export function recoveryScore(health, profile = {}, from, to) {
 }
 
 /** Fitness-Profil 0–100 je Achse zum Zeitpunkt `at`. */
-export function fitnessScores({ sessions = [], sets = [], profile = {}, health = null }, at = Date.now()) {
+export function fitnessScores({ sessions = [], sets = [], profile = {}, body = [], health = null }, at = Date.now()) {
   const bw = profile.bodyweight || 80;
   const from = at - WINDOW * DAY;
   const weeks = WINDOW / 7;
   const done = doneIn(sessions, from, at);
-  const hlth = health ?? healthFromSessions(sessions);
+  const hlth = health ?? healthRecords(body, sessions);
 
   // Muskelaufbau: Ø Wochensätze je Muskel, voll ab 6 (Primär 1, Sekundär 0,5)
   const vol = Object.fromEntries(Object.keys(MUSCLES).map((m) => [m, 0]));
