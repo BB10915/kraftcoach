@@ -10,13 +10,14 @@ import { setE1rm } from '../logic/e1rm.js';
 import { makeItem } from '../logic/planner.js';
 import { openPicker } from './picker.js';
 import { openGuide, guideHintHtml, markKnown } from './guide.js';
-import { toast, confirmSheet, numberSheet, sheet, ICONS } from '../ui.js';
+import { toast, confirmSheet, numberSheet, sheet, ring, ICONS } from '../ui.js';
 import { beep, keepAwake } from '../timer.js';
 import { esc, uid, fmtNum, fmtClock, fmtMin, roundTo, clamp } from '../util.js';
 
 let tick = null;
 let draft = null; // { key, weight, reps, reason, calibrating }
 let beeped = false;
+let showList = false;
 
 /** Nach Änderungen von außen (Chat) den Satz-Vorschlag neu berechnen. */
 export function resetDraft() {
@@ -26,6 +27,7 @@ export function resetDraft() {
 export function leave() {
   clearInterval(tick);
   tick = null;
+  showList = false;
   keepAwake(false);
 }
 
@@ -127,6 +129,43 @@ function restHtml(sess) {
   </div>`;
 }
 
+/** Satz-Punkte: erledigt, aktuell, offen. */
+function setDots(done, total) {
+  const dots = Array.from({ length: Math.max(total, done) }, (_, i) => `<i class="${i < done ? 'on' : i === done ? 'next' : ''}"></i>`).join('');
+  return `<div class="set-dots" aria-hidden="true">${dots}</div>`;
+}
+
+/** Vollbild während der Pause: Countdown, verbleibende Sätze, nächster Satz. */
+function restScreen(sess, cur, dm) {
+  const left = (sess.rest.endAt - Date.now()) / 1000;
+  const ex = cur ? getEx(cur.exerciseId) : null;
+  const isTimer = cur?.kind === 'timed' && sess.rest.label === ex.name;
+  let next = '';
+  if (cur?.kind === 'timed' && !isTimer) next = `<div class="card focus-next"><div class="small muted">Als Nächstes</div><h2 class="ex-title">${esc(ex.name)}</h2><div class="num">${cur.minutes} Min</div></div>`;
+  else if (cur?.kind === 'strength') {
+    const done = dm.get(cur.uid) || 0;
+    const open = Math.max(1, cur.sets - done);
+    const d = ensureDraft(sess, cur);
+    next = `<div class="card focus-next">
+      <div class="small muted">Als Nächstes</div>
+      <h2 class="ex-title">${esc(ex.name)}</h2>
+      <div class="num">${fmtNum(d.weight)} ${unitLabel(ex)} × ${d.reps} Wdh.</div>
+      ${setDots(done, cur.sets)}
+      <div class="small muted">Satz ${done + 1} von ${Math.max(cur.sets, done + 1)} · noch ${open} ${open === 1 ? 'Satz' : 'Sätze'}</div>
+    </div>`;
+  }
+  return `<section class="hero focus-rest" data-rest>
+      ${ring(left / sess.rest.total, `<span>${isTimer ? 'Timer' : 'Pause'}</span><b class="num" data-rest-clock>${fmtClock(left)}</b>`)}
+      ${isTimer ? `<p>${esc(sess.rest.label)}</p>` : ''}
+    </section>
+    ${next}
+    <div class="btn-row">
+      <button class="btn" data-act="rest-plus">+30 s</button>
+      <button class="btn primary" data-act="rest-skip">${isTimer ? 'Timer beenden' : 'Pause beenden'}</button>
+    </div>
+    ${workSetsOf(sess).length ? '<button class="btn ghost block sm" data-act="edit-last" style="margin-top:8px">Letzten Satz korrigieren</button>' : ''}`;
+}
+
 function strengthCard(sess, it, dm) {
   const ex = getEx(it.exerciseId);
   const d = ensureDraft(sess, it);
@@ -143,6 +182,7 @@ function strengthCard(sess, it, dm) {
       <button class="icon-btn" data-act="guide" data-id="${esc(it.exerciseId)}" aria-label="Anleitung zur Übung">${ICONS.info}</button>
       <button class="icon-btn" data-act="swap" aria-label="Übung tauschen">${ICONS.swap}</button>
     </div>
+    ${setDots(n, it.sets)}
     ${n === 0 ? guideHintHtml(it.exerciseId) : ''}
     ${it.note ? `<div class="pill-note" style="margin-top:10px">${esc(it.note)}</div>` : ''}
     <div class="reason ${d.calibrating ? 'calib' : ''}">${esc(d.reason || '')}${changed ? ' <span class="faint">(angepasst)</span>' : ''}</div>
@@ -228,24 +268,36 @@ export function render(root, route, app) {
   const cur = currentItem(sess);
   const pr = projection(sess, dm);
 
-  root.innerHTML = `${topHtml(sess, pr)}
-    ${cutHtml(sess, pr, dm)}
-    ${restHtml(sess)}
+  const resting = !!sess.rest && sess.rest.endAt > Date.now();
+  const finishBtn = (primary) => `<button class="btn ${primary ? 'primary' : ''} block big" data-act="finish" style="margin-top:8px">Training beenden</button>`;
+  const openCount = openItems(sess).length;
+  const toggle = `<button class="btn sm block focus-toggle" data-act="toggle-list">${showList ? '← Zurück zur Übung' : `Liste · noch ${openCount} ${openCount === 1 ? 'Übung' : 'Übungen'}`}</button>`;
+
+  let main;
+  if (showList) {
+    main = `${listHtml(sess, dm, cur)}${finishBtn(!cur)}
+    <button class="btn ghost danger block sm" data-act="abort" style="margin-top:8px">Training abbrechen (löschen)</button>`;
+  } else if (resting) main = restScreen(sess, cur, dm);
+  else {
+    main = `${restHtml(sess)}
     ${cur ? (cur.kind === 'timed' ? timedCard(cur) : strengthCard(sess, cur, dm))
       : `<div class="card empty"><p>${sess.items.length ? 'Alle Übungen erledigt! 🎉' : 'Füge deine erste Übung hinzu.'}</p>
-         <button class="btn ${sess.items.length ? '' : 'primary'}" data-act="add">+ Übung hinzufügen</button></div>`}
-    ${listHtml(sess, dm, cur)}
-    <button class="btn ${cur ? '' : 'primary'} block big" data-act="finish" style="margin-top:8px">Training beenden</button>
-    <button class="btn ghost danger block sm" data-act="abort" style="margin-top:8px">Training abbrechen (löschen)</button>`;
+         <button class="btn" data-act="add">+ Übung hinzufügen</button></div>${finishBtn(true)}`}`;
+  }
 
-  startTick(root, sess);
+  root.innerHTML = `${topHtml(sess, pr)}
+    ${toggle}
+    ${cutHtml(sess, pr, dm)}
+    ${main}`;
+
+  startTick(root, sess, () => render(root, route, app));
   root.onclick = (e) => {
     const el = e.target.closest('[data-act]');
     if (el) onAction(el.dataset.act, el, sess, cur, root, route, app);
   };
 }
 
-function startTick(root, sess) {
+function startTick(root, sess, rerender) {
   clearInterval(tick);
   tick = setInterval(() => {
     const el = root.querySelector('[data-elapsed]');
@@ -255,12 +307,15 @@ function startTick(root, sess) {
     const box = root.querySelector('[data-rest]');
     const clock = root.querySelector('[data-rest-clock]');
     if (clock) clock.textContent = left <= 0 ? 'Los!' : fmtClock(left);
+    box?.querySelector('.ring .val')?.setAttribute('stroke-dasharray', `${clamp((left / sess.rest.total) * 100, 0, 100)} 100`);
     box?.classList.toggle('ending', left > 0 && left < 10);
     box?.classList.toggle('done', left <= 0);
     if (left <= 0 && !beeped) {
       beeped = true;
       beep({ sound: S.settings.training.sound, vibrate: S.settings.training.vibrate });
     }
+    // Pause vorbei: zurück zur Übung.
+    if (left <= 0 && box?.classList.contains('focus-rest')) rerender();
   }, 250);
 }
 
@@ -301,8 +356,10 @@ async function onAction(act, el, sess, cur, root, route, app) {
     case 'log': return logSet(sess, cur, +el.dataset.rir, rerender);
     case 'guide': return openGuide(el.dataset.id, { onChange: rerender });
     case 'guide-known': await markKnown(el.dataset.id); toast('Okay – wird nicht mehr vorgeschlagen'); return rerender();
-    case 'rest-plus': if (sess.rest) { sess.rest.endAt = Math.max(Date.now(), sess.rest.endAt) + 30000; beeped = false; } return save();
+    case 'rest-plus': if (sess.rest) { sess.rest.endAt = Math.max(Date.now(), sess.rest.endAt) + 30000; sess.rest.total = Math.max(sess.rest.total, (sess.rest.endAt - Date.now()) / 1000); beeped = false; } return save();
     case 'rest-skip': sess.rest = null; return save();
+    case 'toggle-list': showList = !showList; window.scrollTo(0, 0); return rerender();
+    case 'edit-last': return editSet(workSetsOf(sess).sort((a, b) => b.ts - a.ts)[0].id, sess, rerender);
     case 'timed-start': startRest(sess, cur.minutes * 60, getEx(cur.exerciseId).name); return save();
     case 'set+': cur.sets += 1; return save();
     case 'set-': cur.sets = Math.max(1, cur.sets - 1, doneMap(sess).get(cur.uid) || 0); return save();
@@ -319,6 +376,7 @@ async function onAction(act, el, sess, cur, root, route, app) {
       if (!it) return;
       if (it.status !== 'open') it.status = 'open'; // erledigte/gestrichene Übung wieder aufnehmen
       sess.currentUid = it.uid;
+      showList = false;
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return save();
     }

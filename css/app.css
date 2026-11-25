@@ -377,3 +377,16 @@ input[type=text], input[type=number], input[type=password], input[type=search], 
 #tabbar a.on { color: var(--text); }
 .sheet { background: #1a2128; border-color: transparent; border-radius: 28px 28px 0 0; }
 @media (prefers-reduced-motion: reduce) { .sheet, .btn, .chip, .timebar > i { animation: none; transition: none; } }
+
+/* Training: Fokus-Ansicht */
+.focus-toggle { margin-bottom: 12px; }
+.set-dots { display: flex; gap: 6px; margin: 12px 0 4px; }
+.set-dots i { flex: 1; height: 5px; border-radius: 99px; background: var(--surface-3); }
+.set-dots i.on { background: var(--accent); }
+.set-dots i.next { background: var(--text); }
+.focus-rest { margin: 8px 0 16px; }
+.focus-rest .ring { --size: min(260px, 70vw); }
+.focus-rest .ring-in b { font-size: 68px; font-weight: 200; max-width: none; }
+.focus-next { text-align: center; }
+.focus-next .num { font-size: 18px; margin-top: 6px; }
+.wo-top { background: rgba(26,36,47,.92); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); margin-left: -16px; margin-right: -16px; padding-left: 16px; padding-right: 16px; }
