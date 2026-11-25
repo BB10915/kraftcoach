@@ -504,3 +504,57 @@ import { chatContext, cleanReply, CHAT_SCHEMA } from '../js/ai/chat.js';
   ok(ctx.includes('TRAINING LÄUFT') && ctx.includes('lh-bankdruecken') && ctx.includes('← AKTUELL') && !ctx.includes(st.ai.apiKey || 'AIza'), 'Chat-Kontext enthält Training, aber keinen Schlüssel');
   log(`${pass} Tests bestanden, ${fail} fehlgeschlagen (Chat)`);
 }
+
+// ---------- Persönlicher Schnitt (Ruhepuls, HRV) und Vortag ----------
+import { personalBaseline, readinessBase } from '../js/logic/baseline.js';
+import { readiness as rd, checkinText as ciText, DEFAULT_CHECKIN as DCI } from '../js/data/goals.js';
+{
+  const ci = () => JSON.parse(JSON.stringify(DCI));
+  const day = (n) => `2026-11-${String(n).padStart(2, '0')}`;
+  // 10 Tage mit Ruhepuls 50 und HRV 80, dazu der heutige Tag (darf nicht mitzählen)
+  const entries = [];
+  for (let d = 15; d <= 24; d++) entries.push({ day: day(d), hr: 50, hrv: 80, sleepH: 8, steps: 8000 });
+  entries.push({ date: day(25), hr: 90, hrv: 20 });
+  entries.push({ date: day(1), hr: 99, hrv: 10 }); // älter als 14 Tage
+  let b = personalBaseline(entries, day(25));
+  ok(b.hr === 50 && b.hrv === 80 && b.n.hr === 10, 'Schnitt aus 10 Tagen, ohne heute und ohne alte Werte: ' + JSON.stringify(b));
+  ok(b.sleepH === 8 && b.steps === 8000, 'Schnitt für Schlaf und Schritte');
+  ok(b.yesterday?.steps === 8000, 'Vortag gefunden');
+  ok(personalBaseline(entries.slice(0, 3), day(25)).hr === null, 'Unter 4 Messungen kein Schnitt');
+  ok(personalBaseline([], day(25)).yesterday === null, 'Ohne Daten kein Vortag');
+
+  // Profil sagt 60 / 50 ms, der echte Schnitt 50 / 80 ms
+  const prof = { body: { restingHr: 60, hrv: 50 } };
+  const base = readinessBase(entries, prof, day(25));
+  ok(base.hr === 50 && base.hrSrc === 'schnitt' && base.hrvSrc === 'schnitt', 'Schnitt schlägt Profilwert');
+  const few = readinessBase(entries.slice(0, 2), prof, day(25));
+  ok(few.hr === 60 && few.hrSrc === 'profil', 'Zu wenig Daten → Profilwert');
+  // Heute 57: nach Profil (60) normal, nach eigenem Schnitt (50) klar erhöht
+  ok(rd({ ...ci(), hr: 57 }, prof).points === 0, 'Ohne Schnitt: 57 bei Profil 60 unauffällig');
+  const r = rd({ ...ci(), hr: 57, base }, prof);
+  ok(r.points === 1 && r.reasons.some((x) => /Schnitt/.test(x)), 'Mit Schnitt: 57 statt 50 → erhöht: ' + r.reasons);
+  ok(rd({ ...ci(), hrv: 62, base }, prof).points === 1, 'HRV 62 bei Schnitt 80 → niedrig');
+  ok(rd({ ...ci(), hrv: 70, base }, prof).points === 0.5, 'HRV 70 bei Schnitt 80 → leicht niedriger');
+  ok(rd({ ...ci(), hr: 55, base }, prof).points === 0.5, 'Ruhepuls +5 → leicht erhöht');
+
+  // Schritte vom Vortag
+  const big = [...entries.filter((e) => (e.day ?? e.date) !== day(24)), { date: day(24), steps: 22000, sleepH: 8 }];
+  const bb = readinessBase(big, prof, day(25));
+  const rs = rd({ ...ci(), base: bb }, prof);
+  ok(rs.points === 1 && rs.level === 'reduziert' && /22\.000 Schritte/.test(rs.reasons[0]), 'Gestern 22.000 Schritte → reduzieren: ' + rs.reasons);
+  const mid = readinessBase([...entries.filter((e) => (e.day ?? e.date) !== day(24)), { date: day(24), steps: 16000 }], prof, day(25));
+  ok(rd({ ...ci(), base: mid }, prof).points === 0.5, 'Gestern 16.000 Schritte → halber Punkt');
+
+  // Schlaf vom Vortag
+  const shortY = readinessBase([...entries.filter((e) => (e.day ?? e.date) !== day(24)), { date: day(24), sleepH: 5.5 }], prof, day(25));
+  const two = rd({ ...ci(), sleepH: 6, base: shortY }, prof);
+  ok(two.points === 1.5 && /Nacht davor/.test(two.reasons[0]), 'Zwei kurze Nächte in Folge zählen mehr: ' + JSON.stringify(two));
+  ok(rd({ ...ci(), sleepH: 8, sleep: 'gut', base: shortY }, prof).points === 0, 'Eine kurze Nacht davor, heute gut geschlafen → kein Abzug');
+  const veryShortY = readinessBase([...entries.filter((e) => (e.day ?? e.date) !== day(24)), { date: day(24), sleepH: 4.5 }], prof, day(25));
+  ok(rd({ ...ci(), base: veryShortY }, prof).points === 0.5, 'Vorletzte Nacht nur 4,5 h → halber Punkt');
+  ok(rd({ ...ci(), sleepH: 6, sleep: 'gut', base }, prof).points === 0.5, '6 h (gut) statt ~8 h wie sonst → halber Punkt');
+  ok(rd({ ...ci(), sleep: 'schlecht', sleepH: 5, base: shortY }, prof).points === 2, 'Schlaf bleibt bei 2 Punkten gedeckelt');
+
+  ok(/normal ~50, Schnitt 10 Tage/.test(ciText({ ...ci(), hr: 57, base })), 'KI-Text nennt den Schnitt');
+  log(`${pass} Tests bestanden, ${fail} fehlgeschlagen (Schnitt)`);
+}

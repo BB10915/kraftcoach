@@ -11,6 +11,7 @@ import { ENERGY, SLEEP, SLEEP_H, STRESS, LAST_MEAL, ATE, LOADS, REGIONS, WISHES,
 import { planDay, fmtL } from '../logic/daycoach.js';
 import { parseHealth, sleepChip, healthText } from '../logic/health.js';
 import { entryFromCheckin } from '../logic/bodylog.js';
+import { readinessBase } from '../logic/baseline.js';
 import { openPicker } from './picker.js';
 import { openGuide, adviceFor } from './guide.js';
 import { toast, confirmSheet, sheet, ring, ICONS } from '../ui.js';
@@ -24,6 +25,9 @@ let checkin = JSON.parse(JSON.stringify(DEFAULT_CHECKIN));
 let showBody = false;
 let showMore = false;
 let dayOpen = true;
+
+/** Check-in mit persönlichem Vergleichswert (Schnitt der letzten Tage, sonst Profil) und Vortag. */
+const withBase = (c) => (!c || c.base ? c : { ...c, base: readinessBase(S.body ?? [], S.settings.profile) });
 
 const plannedSession = () => [...S.sessions].reverse().find((s) => s.status === 'planned');
 
@@ -41,7 +45,7 @@ function roleBadge(it) {
 const LEVEL_COLOR = { voll: 'var(--accent)', normal: 'var(--text)', reduziert: 'var(--warn)', regeneration: 'var(--info, #6cb4ff)' };
 
 function levelHtml(p) {
-  const r = readiness(p.checkin, S.settings.profile);
+  const r = readiness(withBase(p.checkin), S.settings.profile);
   const [title] = LEVEL_TEXT[r.level];
   const suggestRegen = r.level === 'regeneration' && p.title !== 'Regeneration';
   return `<div style="margin-top:10px;padding:10px 12px;border-radius:12px;background:var(--surface-2)">
@@ -54,7 +58,7 @@ function levelHtml(p) {
 // ---------- Dein Tag: Morgen bis Abend ----------
 
 function dayHtml(sess) {
-  const day = planDay({ settings: S.settings, checkin: sess?.checkin ?? checkin, session: sess, ai: sess?.dayAi });
+  const day = planDay({ settings: S.settings, checkin: withBase(sess?.checkin ?? checkin), session: sess, ai: sess?.dayAi });
   const t = day.targets;
   const head = `<button class="row between" data-act="day-toggle" style="width:100%;background:none;border:0;color:inherit;padding:0;text-align:left">
       <h2 style="margin:0">Dein Tag</h2><span class="small muted">${dayOpen ? 'Einklappen ▴' : 'Anzeigen ▾'}</span></button>`;
@@ -78,7 +82,7 @@ function dayHtml(sess) {
 const LEVEL_FILL = { voll: 1, normal: 0.75, reduziert: 0.5, regeneration: 0.25 };
 
 function heroHtml(c) {
-  const { level } = readiness(c, S.settings.profile);
+  const { level } = readiness(withBase(c), S.settings.profile);
   const [title, text] = LEVEL_TEXT[level];
   const tone = level === 'voll' || level === 'normal' ? 'var(--accent)' : level === 'reduziert' ? 'var(--warn)' : 'var(--info)';
   return `<section class="hero">${ring(LEVEL_FILL[level], `<span>Tagesform</span><b>${title}</b>`, tone)}<p>${text}</p></section>`;
@@ -208,7 +212,7 @@ function checkinHtml() {
 }
 
 function readyLine() {
-  const r = readiness(checkin, S.settings.profile);
+  const r = readiness(withBase(checkin), S.settings.profile);
   return `<div class="small" style="margin-top:14px;padding-top:10px;border-top:1px solid var(--line)">Einschätzung: <b style="color:${LEVEL_COLOR[r.level]}">${LEVEL_TEXT[r.level][0]}</b>${r.reasons.length ? `<span class="muted"> – ${esc(r.reasons.join(', '))}</span>` : ''}</div>`;
 }
 
@@ -224,10 +228,11 @@ function setChips(label, options, key, { multi = false, numeric = false } = {}) 
 function moreHtml() {
   const c = checkin;
   const def = S.settings.profile.day?.trainTime ?? '';
+  const b = withBase(c).base;
   const box = (k, label, ph, mode = 'numeric') => `<label class="field grow"><span>${label}</span><input type="text" inputmode="${mode}" data-ci-in="${k}" value="${esc(c[k] ?? '')}" placeholder="${esc(ph)}" autocomplete="off"></label>`;
   return `${setChips('Wie lange geschlafen?', SLEEP_H, 'sleepH', { numeric: true })}
     ${setChips('Stresslevel', STRESS, 'stress')}
-    <div class="row" style="margin-top:12px;align-items:flex-end">${box('hr', 'Ruhepuls heute', S.settings.profile.body?.restingHr ? `normal ${S.settings.profile.body.restingHr}` : 'z. B. 60')}${box('hrv', 'HRV (ms)', 'optional')}${box('trainTime', 'Training um', def || '17:30', 'text')}</div>
+    <div class="row" style="margin-top:12px;align-items:flex-end">${box('hr', 'Ruhepuls heute', b.hr ? `${b.hrSrc === 'schnitt' ? 'Schnitt' : 'normal'} ${b.hr}` : 'z. B. 60')}${box('hrv', 'HRV (ms)', b.hrv ? `${b.hrvSrc === 'schnitt' ? 'Schnitt' : 'normal'} ${b.hrv}` : 'optional')}${box('trainTime', 'Training um', def || '17:30', 'text')}</div>
     ${setChips('Letzte Mahlzeit vor', LAST_MEAL, 'lastMeal')}
     ${setChips('Heute bisher gegessen', ATE, 'ate')}
     ${setChips('Heutige Belastung', LOADS, 'loads', { multi: true })}`;
@@ -446,7 +451,7 @@ async function createPlan(useAi, root, route, app) {
   loading = true;
   render(root, route, app);
   try {
-    const ci = JSON.parse(JSON.stringify(checkin));
+    const ci = withBase(JSON.parse(JSON.stringify(checkin)));
     const plan = await makePlan({ settings: S.settings, sessions: S.sessions, sets: S.sets, budgetMin: budget, useAi, checkin: ci });
     const s = {
       id: uid(), date: new Date().toISOString(), status: 'planned', budgetMin: budget,
