@@ -1,9 +1,11 @@
 // Datenhaltung: IndexedDB im Browser + In-Memory-Kopie für schnelle Berechnungen.
 
 import { PROFILE_DEFAULTS } from './data/profile.js';
+import { mergeEntry, cleanEntry, normalizeLog } from './logic/bodylog.js';
+import { dayKey } from './util.js';
 
 const DB_NAME = 'kraftcoach';
-const DB_VERSION = 1;
+const DB_VERSION = 2; // 2: Körperwerte-Tagebuch (Store 'body')
 
 export const DEFAULT_SETTINGS = {
   profile: {
@@ -47,6 +49,7 @@ export const S = {
   settings: structuredCloneSafe(DEFAULT_SETTINGS),
   sessions: [], // sortiert nach date aufsteigend
   sets: [],
+  body: [], // Körperwerte je Tag, sortiert nach day aufsteigend (siehe js/logic/bodylog.js)
 };
 
 function structuredCloneSafe(o) {
@@ -75,6 +78,7 @@ function openDb() {
         const s = db.createObjectStore('sets', { keyPath: 'id' });
         s.createIndex('sessionId', 'sessionId');
       }
+      if (!db.objectStoreNames.contains('body')) db.createObjectStore('body', { keyPath: 'day' });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -105,11 +109,12 @@ const sortSessions = () => S.sessions.sort((a, b) => (a.date < b.date ? -1 : a.d
 const sortSets = () => S.sets.sort((a, b) => a.ts - b.ts);
 
 export async function load() {
-  await tx(['kv', 'sessions', 'sets'], 'readonly', async (t) => {
+  await tx(['kv', 'sessions', 'sets', 'body'], 'readonly', async (t) => {
     const settings = await wrap(t.objectStore('kv').get('settings'));
     S.settings = deepMerge(DEFAULT_SETTINGS, settings ?? {});
     S.sessions = await wrap(t.objectStore('sessions').getAll());
     S.sets = await wrap(t.objectStore('sets').getAll());
+    S.body = normalizeLog(await wrap(t.objectStore('body').getAll()));
   });
   sortSessions();
   sortSets();
@@ -118,6 +123,27 @@ export async function load() {
 export async function saveSettings(next = S.settings) {
   S.settings = next;
   await tx(['kv'], 'readwrite', (t) => t.objectStore('kv').put(JSON.parse(JSON.stringify(next)), 'settings'));
+  // Neues Körpergewicht (Einstellungen, Chat, Health, Einrichtung) auch ins Tagebuch schreiben.
+  const bw = next.profile?.bodyweight;
+  const lastBw = [...S.body].reverse().find((x) => x.weight != null)?.weight;
+  if (next.onboarded && bw && bw !== lastBw) await putBodyDay({ day: dayKey(Date.now()), at: Date.now(), weight: bw });
+}
+
+/** Körperwerte eines Tages speichern. Wird in den bestehenden Tageseintrag eingemischt. */
+export async function putBodyDay(entry) {
+  const e = cleanEntry(entry);
+  if (!e) return null;
+  const i = S.body.findIndex((x) => x.day === e.day);
+  const merged = mergeEntry(i >= 0 ? S.body[i] : null, e);
+  if (i >= 0) S.body[i] = merged;
+  else S.body = normalizeLog([...S.body, merged]);
+  await tx(['body'], 'readwrite', (t) => t.objectStore('body').put({ ...merged }));
+  return merged;
+}
+
+export async function deleteBodyDay(day) {
+  S.body = S.body.filter((x) => x.day !== day);
+  await tx(['body'], 'readwrite', (t) => t.objectStore('body').delete(day));
 }
 
 export async function putSession(sess) {
@@ -168,6 +194,7 @@ export function exportData({ includeKey = false } = {}) {
     settings,
     sessions: S.sessions,
     sets: S.sets,
+    body: S.body,
   };
 }
 
@@ -176,21 +203,30 @@ export function validateBackup(data) {
   if (!Array.isArray(data.sessions) || !Array.isArray(data.sets)) return 'Die Datei ist unvollständig.';
   if (data.sessions.some((s) => !s.id || !s.date)) return 'Einheiten in der Datei sind fehlerhaft.';
   if (data.sets.some((x) => !x.id || !x.sessionId || !x.exerciseId)) return 'Sätze in der Datei sind fehlerhaft.';
+  if (data.body != null && !Array.isArray(data.body)) return 'Körperwerte in der Datei sind fehlerhaft.';
   return null;
 }
 
 /** mode: 'replace' ersetzt alles, 'merge' ergänzt fehlende Einträge. */
 export async function importData(data, mode = 'replace') {
   const keepKey = S.settings.ai.apiKey;
-  await tx(['kv', 'sessions', 'sets'], 'readwrite', (t) => {
+  await tx(['kv', 'sessions', 'sets', 'body'], 'readwrite', (t) => {
     const ss = t.objectStore('sessions');
     const st = t.objectStore('sets');
+    const sb = t.objectStore('body');
+    // Ältere Sicherungen ohne Körperwerte lassen das vorhandene Tagebuch stehen.
+    const body = Array.isArray(data.body) ? normalizeLog(data.body) : null;
     if (mode === 'replace') {
       ss.clear();
       st.clear();
+      if (body) sb.clear();
     }
     for (const s of data.sessions) ss.put(s);
     for (const x of data.sets) st.put(x);
+    for (const e of body ?? []) {
+      const old = mode === 'merge' ? S.body.find((x) => x.day === e.day) : null;
+      sb.put(old ? mergeEntry(e, old) : e); // beim Ergänzen gewinnen die Werte auf dem Gerät
+    }
     if (mode === 'replace' && data.settings) {
       const merged = deepMerge(DEFAULT_SETTINGS, data.settings);
       if (!merged.ai.apiKey) merged.ai.apiKey = keepKey; // Schlüssel nicht verlieren
@@ -201,10 +237,11 @@ export async function importData(data, mode = 'replace') {
 }
 
 export async function wipeAll() {
-  await tx(['kv', 'sessions', 'sets'], 'readwrite', (t) => {
+  await tx(['kv', 'sessions', 'sets', 'body'], 'readwrite', (t) => {
     t.objectStore('kv').clear();
     t.objectStore('sessions').clear();
     t.objectStore('sets').clear();
+    t.objectStore('body').clear();
   });
   await load();
 }

@@ -370,6 +370,127 @@ import { parseHealth, parseLooseNumber, parseSleep, sleepChip } from '../js/logi
   log(`${pass} Tests bestanden, ${fail} fehlgeschlagen (Apple Health)`);
 }
 
+// ---------- Fortschritts-Netzdiagramm ----------
+import { strengthScores, fitnessScores, progressRadar, recoveryScore, healthFromSessions, healthRecords, STRENGTH_AXES, FITNESS_AXES } from '../js/logic/radar.js';
+import { radarSvg } from '../js/views/radar.js';
+{
+  const D = 86400000, now = Date.UTC(2026, 10, 25, 12);
+  let n = 0;
+  const set = (exerciseId, weight, reps, daysAgo, rir = 0, sessionId = 'r' + daysAgo) => ({ id: 'rs' + n++, sessionId, exerciseId, weight, reps, rir, ts: now - daysAgo * D });
+  // Bankdrücken 100 kg × 1 bei 80 kg Körpergewicht = 1,25× → 100 Punkte
+  let sc = strengthScores([set('lh-bankdruecken', 100, 1, 3)], 80, now);
+  ok(sc.hpush === 100 && sc.squat === null, 'Kraft: Ziel erreicht = 100, ohne Daten null');
+  sc = strengthScores([set('lh-bankdruecken', 50, 1, 3)], 80, now);
+  ok(sc.hpush === 50, 'Kraft: halbes Ziel = 50');
+  sc = strengthScores([set('lh-bankdruecken', 200, 1, 3)], 80, now);
+  ok(sc.hpush === 100, 'Kraft: über Ziel gedeckelt');
+  sc = strengthScores([set('kg-klimmzug', 24, 1, 3)], 80, now);
+  ok(sc.vpull === 100, 'Kraft: Klimmzug zählt Körpergewicht mit (80+24 = 1,3×)');
+  sc = strengthScores([set('kh-bankdruecken', 30, 1, 3)], 80, now);
+  ok(sc.hpush === Math.round((30 * 2.4) / 80 / 1.25 * 100), 'Kraft: Kurzhantel wird umgerechnet');
+  sc = strengthScores([set('lh-bankdruecken', 100, 1, 50)], 80, now);
+  ok(sc.hpush === null, 'Kraft: älter als 6 Wochen zählt nicht');
+  ok(strengthScores([{ ...set('lh-bankdruecken', 100, 1, 3), warmup: true }], 80, now).hpush === null, 'Kraft: Aufwärmsätze zählen nicht');
+
+  // Fitness-Profil
+  const sess = (daysAgo, items = [], checkin = null) => ({ id: 'r' + daysAgo, status: 'done', startedAt: now - daysAgo * D, date: new Date(now - daysAgo * D).toISOString(), items, checkin });
+  const sessions = [];
+  for (let w = 0; w < 4; w++) for (const d of [1, 3, 5]) sessions.push(sess(w * 7 + d, [
+    { kind: 'timed', status: 'done', exerciseId: 'c-rudergeraet', minutes: 20 },
+    { kind: 'timed', status: 'done', exerciseId: 'm-huefte', minutes: 5 },
+    { kind: 'timed', status: 'skipped', exerciseId: 'm-cooldown', minutes: 5 },
+  ]));
+  const profile = { bodyweight: 80, daysPerWeek: '3–4', body: {} };
+  const fs = fitnessScores({ sessions, sets: [], profile, health: [] }, now);
+  ok(fs.consistency === 100, 'Konstanz: 3 Einheiten/Woche bei Ziel 3 = 100');
+  ok(fs.conditioning === 100, 'Kondition: 60 Cardio-Min/Woche = 100');
+  ok(fs.mobility === 50, 'Beweglichkeit: 15 von 30 Min/Woche = 50, gestrichene zählen nicht');
+  ok(fs.volume === null && fs.strength === null && fs.recovery === null, 'Ohne Sätze/Health: null');
+  ok(Object.values(fitnessScores({ sessions: [], sets: [], profile }, now)).every((v) => v === null), 'Ganz ohne Training: alles null');
+  const half = fitnessScores({ sessions: sessions.filter((_, i) => i % 3 !== 2), sets: [], profile, health: [] }, now);
+  ok(half.consistency === 67, 'Konstanz: 2 von 3 pro Woche = 67');
+
+  // Volumen: 6 Sätze/Woche für jeden Muskel → 100; nur Brust → 1/12
+  const vs = [];
+  for (let w = 0; w < 4; w++) for (let i = 0; i < 6; i++) vs.push(set('ma-butterfly', 30, 10, w * 7 + 2, 2));
+  ok(fitnessScores({ sessions, sets: vs, profile, health: [] }, now).volume === Math.round(100 / 12), 'Muskelaufbau: nur Brust im Ziel');
+
+  // Erholung
+  const H = (daysAgo, o) => ({ ts: now - daysAgo * D, ...o });
+  ok(recoveryScore([H(1, { sleepH: 8 }), H(2, { sleepH: 8 })], {}, now - 28 * D, now) === null, 'Erholung: unter 3 Werten null');
+  ok(recoveryScore([H(1, { sleepH: 8 }), H(2, { sleepH: 8 }), H(3, { sleepH: 8 })], {}, now - 28 * D, now) === 100, 'Erholung: 8 h Schlaf = 100');
+  ok(recoveryScore([1, 2, 3].map((d) => H(d, { hrv: 60, hr: 60 })), { body: { hrv: 60, restingHr: 60 } }, now - 28 * D, now) === 50, 'Erholung: genau Normalwert = 50');
+  ok(recoveryScore([1, 2, 3].map((d) => H(d, { hrv: 72 })), { body: { hrv: 60 } }, now - 28 * D, now) === 100, 'Erholung: HRV +20 % = 100');
+  const hs = healthFromSessions([sess(1, [], { hr: 55, hrv: 70, sleepH: 7, health: { steps: 9000 } }), sess(2, [], DEFAULT_CI())]);
+  ok(hs.length === 1 && hs[0].hr === 55 && hs[0].steps === 9000, 'Health aus Check-ins der Einheiten');
+
+  // Körperwerte-Tagebuch hat Vorrang, Check-ins füllen nur fehlende Tage
+  const dk = (d) => { const x = new Date(now - d * D); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`; };
+  const recs = healthRecords([{ day: dk(1), hr: 50, sleepH: 8 }], [sess(1, [], { hr: 70 }), sess(2, [], { hr: 60 })]);
+  ok(recs.length === 2 && recs.some((h) => h.hr === 50) && recs.some((h) => h.hr === 60) && !recs.some((h) => h.hr === 70), 'Health: Tagebuch vor Check-in am selben Tag');
+  const bodyLog = [1, 2, 3].map((d) => ({ day: dk(d), sleepH: 8 }));
+  ok(fitnessScores({ sessions, sets: [], profile, body: bodyLog }, now).recovery === 100, 'Erholung aus dem Körperwerte-Tagebuch');
+
+  // Vergleich mit vor 8 Wochen
+  const r = progressRadar({ sessions, sets: [set('lh-bankdruecken', 100, 1, 2), set('lh-bankdruecken', 80, 1, 60)], profile }, now);
+  ok(r.strength.now.hpush === 100 && r.strength.before.hpush === 80, 'Radar: heute vs. vor 8 Wochen');
+  ok(r.fitness.before.consistency === 0 || r.fitness.before.consistency === null, 'Radar: vor 8 Wochen keine Einheiten');
+  ok(Object.keys(r.fitness.now).join() === FITNESS_AXES.map((a) => a.key).join() && STRENGTH_AXES.length === 6, 'Radar: Achsen vollständig');
+
+  const svg = radarSvg(FITNESS_AXES, r.fitness.now, r.fitness.before, { link: 'strength' });
+  ok(svg.startsWith('<svg') && svg.includes('data-act="radar-axis"') && (svg.match(/<text /g) || []).length === 6 && !svg.includes('NaN'), 'Radar-SVG: 6 Beschriftungen, antippbar, keine NaN');
+  ok(!radarSvg(STRENGTH_AXES, {}, {}).includes('<circle'), 'Radar-SVG: ohne Daten keine Punkte');
+  log(`${pass} Tests bestanden, ${fail} fehlgeschlagen (Netzdiagramm)`);
+}
+
+// ---------- Körperwerte-Tagebuch ----------
+import { entryFromCheckin, cleanEntry, mergeEntry, normalizeLog, seriesOf, summaryOf, dayTs } from '../js/logic/bodylog.js';
+import { dayKey } from '../js/util.js';
+{
+  const NOW = new Date(2026, 10, 25, 9).getTime(); // 25.11.2026, 9 Uhr
+  const D = 86400000;
+  const ci = { ...DEFAULT_CI(), sleepH: 7, hr: 61, health: { hr: 58, hrv: 62, sleepH: 7.2, weight: 80.4, steps: 8500, activeKcal: 450 } };
+  let e = entryFromCheckin(ci, { now: NOW });
+  ok(e.day === '2026-11-25' && e.at === NOW, 'Tagebuch: Tag aus Datum');
+  ok(e.hr === 58 && e.sleepH === 7.2 && e.hrv === 62 && e.weight === 80.4 && e.steps === 8500 && e.activeKcal === 450, 'Tagebuch: Health-Werte haben Vorrang vor Chips: ' + JSON.stringify(e));
+  ok(e.energy === 'normal' && e.sleep === 'okay' && !('stress' in e), 'Tagebuch: Selbsteinschätzung übernommen, leere Felder weg');
+  e = entryFromCheckin({ ...DEFAULT_CI(), hr: 64, sleepH: 6 }, { now: NOW });
+  ok(e.hr === 64 && e.sleepH === 6 && !('hrv' in e) && !('steps' in e), 'Tagebuch: Check-in ohne Health');
+  ok(entryFromCheckin(null) === null && entryFromCheckin({}, { now: NOW }) === null, 'Tagebuch: leerer Check-in → nichts speichern');
+  ok(entryFromCheckin({ hr: 400, health: { weight: 5, steps: -3 } }, { now: NOW }) === null, 'Tagebuch: unsinnige Werte verworfen');
+  ok(cleanEntry({ day: '2026-11-25', hr: '58', weight: '80,44' }).weight === 80.4 && cleanEntry({ day: '2026-11-25', hr: '58' }).hr === 58, 'Tagebuch: Text-Zahlen und Rundung');
+  ok(cleanEntry({ hr: 60 }) === null, 'Tagebuch: ohne Tag ungültig');
+
+  const m = mergeEntry({ day: '2026-11-25', at: 1, hr: 58, sleepH: 7.2, energy: 'normal' }, { day: '2026-11-25', at: 2, weight: 80, energy: 'hoch' });
+  ok(m.hr === 58 && m.sleepH === 7.2 && m.weight === 80 && m.energy === 'hoch' && m.at === 2, 'Tagebuch: zweiter Eintrag am Tag ergänzt statt überschreibt: ' + JSON.stringify(m));
+  ok(mergeEntry(null, { day: 'x', hr: 1 }).hr === 1 && mergeEntry({ day: 'x', hr: 1 }, null).hr === 1, 'Tagebuch: merge mit leer');
+
+  const n = normalizeLog([{ day: '2026-11-03', hr: 60 }, { day: '2026-11-01', hr: 62 }, { day: '2026-11-03', hrv: 50 }, { day: '2026-11-02' }, null]);
+  ok(n.length === 2 && n[0].day === '2026-11-01' && n[1].hr === 60 && n[1].hrv === 50, 'Tagebuch: sortiert, je Tag einer, Leere raus: ' + JSON.stringify(n));
+
+  // 28 Tage: Ruhepuls erst 60, letzte Woche 66; HRV erst 60, dann 48; Gewicht konstant; Schritte lückenhaft
+  const blog = normalizeLog(Array.from({ length: 28 }, (_, i) => {
+    const t = NOW - (27 - i) * D, late = i >= 21;
+    return { day: dayKey(t), at: t, hr: late ? 66 : 60, hrv: late ? 48 : 60, weight: 80 + (i % 2) * 0.2, ...(i % 3 ? {} : { steps: 9000 }) };
+  }));
+  ok(blog.length === 28 && blog[27].day === '2026-11-25', 'Tagebuch: Testreihe aufgebaut');
+  let pts = seriesOf(blog, 'hr', { days: 7, now: NOW });
+  ok(pts.length === 7 && pts.every((p) => p.y === 66) && pts[6].x === dayTs('2026-11-25'), 'Verlauf: 7 Tage inkl. heute');
+  ok(seriesOf(blog, 'steps', { days: 30, now: NOW }).length === 10, 'Verlauf: Tage ohne Wert fehlen im Diagramm');
+  ok(seriesOf(blog, 'hr', { days: 30, now: NOW - 40 * D }).length === 0, 'Verlauf: nichts in der Zukunft');
+  let su = summaryOf(blog, 'hr', { now: NOW });
+  ok(su.last.value === 66 && su.last.day === '2026-11-25' && su.avg7 === 66 && near(su.delta, 6) && su.trend === 'schlecht', 'Trend: Ruhepuls steigt → schlechter: ' + JSON.stringify(su));
+  su = summaryOf(blog, 'hrv', { now: NOW });
+  ok(su.trend === 'schlecht' && near(su.delta, -12), 'Trend: HRV fällt → schlechter');
+  ok(summaryOf(blog, 'weight', { now: NOW }).trend === 'gleich', 'Trend: Gewicht schwankt nur → stabil');
+  ok(summaryOf(blog, 'sleepH', { now: NOW }).last === null && summaryOf(blog, 'sleepH', { now: NOW }).trend === null, 'Trend: ohne Daten → keiner');
+  su = summaryOf(blog.slice(-3), 'hr', { now: NOW });
+  ok(su.trend === null && su.avg7 === 66, 'Trend: zu wenig Tage → keine Wertung');
+  const down = blog.map((x, i) => ({ ...x, weight: i >= 21 ? 78 : 80 }));
+  ok(summaryOf(down, 'weight', { now: NOW }).trend === 'ab', 'Trend: Gewicht ohne Wertung (sinkt)');
+  log(`${pass} Tests bestanden, ${fail} fehlgeschlagen (Körperwerte)`);
+}
+
 // ---------- Übungsanleitungen & Animationen ----------
 import { GUIDES, guideFor, guideAdvice, timesDone } from '../js/data/guides.js';
 import { ANIMS, solve, poseAt, frameSvg } from '../js/views/anim.js';
@@ -455,6 +576,60 @@ import { chatContext, cleanReply, CHAT_SCHEMA } from '../js/ai/chat.js';
   const ctx = chatContext({ settings: st, session: sess, sets: [], doneCount: dc });
   ok(ctx.includes('TRAINING LÄUFT') && ctx.includes('lh-bankdruecken') && ctx.includes('← AKTUELL') && !ctx.includes(st.ai.apiKey || 'AIza'), 'Chat-Kontext enthält Training, aber keinen Schlüssel');
   log(`${pass} Tests bestanden, ${fail} fehlgeschlagen (Chat)`);
+}
+
+// ---------- Persönlicher Schnitt (Ruhepuls, HRV) und Vortag ----------
+import { personalBaseline, readinessBase } from '../js/logic/baseline.js';
+import { readiness as rd, checkinText as ciText, DEFAULT_CHECKIN as DCI } from '../js/data/goals.js';
+{
+  const ci = () => JSON.parse(JSON.stringify(DCI));
+  const day = (n) => `2026-11-${String(n).padStart(2, '0')}`;
+  // 10 Tage mit Ruhepuls 50 und HRV 80, dazu der heutige Tag (darf nicht mitzählen)
+  const entries = [];
+  for (let d = 15; d <= 24; d++) entries.push({ day: day(d), hr: 50, hrv: 80, sleepH: 8, steps: 8000 });
+  entries.push({ date: day(25), hr: 90, hrv: 20 });
+  entries.push({ date: day(1), hr: 99, hrv: 10 }); // älter als 14 Tage
+  let b = personalBaseline(entries, day(25));
+  ok(b.hr === 50 && b.hrv === 80 && b.n.hr === 10, 'Schnitt aus 10 Tagen, ohne heute und ohne alte Werte: ' + JSON.stringify(b));
+  ok(b.sleepH === 8 && b.steps === 8000, 'Schnitt für Schlaf und Schritte');
+  ok(b.yesterday?.steps === 8000, 'Vortag gefunden');
+  ok(personalBaseline(entries.slice(0, 3), day(25)).hr === null, 'Unter 4 Messungen kein Schnitt');
+  ok(personalBaseline([], day(25)).yesterday === null, 'Ohne Daten kein Vortag');
+
+  // Profil sagt 60 / 50 ms, der echte Schnitt 50 / 80 ms
+  const prof = { body: { restingHr: 60, hrv: 50 } };
+  const base = readinessBase(entries, prof, day(25));
+  ok(base.hr === 50 && base.hrSrc === 'schnitt' && base.hrvSrc === 'schnitt', 'Schnitt schlägt Profilwert');
+  const few = readinessBase(entries.slice(0, 2), prof, day(25));
+  ok(few.hr === 60 && few.hrSrc === 'profil', 'Zu wenig Daten → Profilwert');
+  // Heute 57: nach Profil (60) normal, nach eigenem Schnitt (50) klar erhöht
+  ok(rd({ ...ci(), hr: 57 }, prof).points === 0, 'Ohne Schnitt: 57 bei Profil 60 unauffällig');
+  const r = rd({ ...ci(), hr: 57, base }, prof);
+  ok(r.points === 1 && r.reasons.some((x) => /Schnitt/.test(x)), 'Mit Schnitt: 57 statt 50 → erhöht: ' + r.reasons);
+  ok(rd({ ...ci(), hrv: 62, base }, prof).points === 1, 'HRV 62 bei Schnitt 80 → niedrig');
+  ok(rd({ ...ci(), hrv: 70, base }, prof).points === 0.5, 'HRV 70 bei Schnitt 80 → leicht niedriger');
+  ok(rd({ ...ci(), hr: 55, base }, prof).points === 0.5, 'Ruhepuls +5 → leicht erhöht');
+
+  // Schritte vom Vortag
+  const big = [...entries.filter((e) => (e.day ?? e.date) !== day(24)), { date: day(24), steps: 22000, sleepH: 8 }];
+  const bb = readinessBase(big, prof, day(25));
+  const rs = rd({ ...ci(), base: bb }, prof);
+  ok(rs.points === 1 && rs.level === 'reduziert' && /22\.000 Schritte/.test(rs.reasons[0]), 'Gestern 22.000 Schritte → reduzieren: ' + rs.reasons);
+  const mid = readinessBase([...entries.filter((e) => (e.day ?? e.date) !== day(24)), { date: day(24), steps: 16000 }], prof, day(25));
+  ok(rd({ ...ci(), base: mid }, prof).points === 0.5, 'Gestern 16.000 Schritte → halber Punkt');
+
+  // Schlaf vom Vortag
+  const shortY = readinessBase([...entries.filter((e) => (e.day ?? e.date) !== day(24)), { date: day(24), sleepH: 5.5 }], prof, day(25));
+  const two = rd({ ...ci(), sleepH: 6, base: shortY }, prof);
+  ok(two.points === 1.5 && /Nacht davor/.test(two.reasons[0]), 'Zwei kurze Nächte in Folge zählen mehr: ' + JSON.stringify(two));
+  ok(rd({ ...ci(), sleepH: 8, sleep: 'gut', base: shortY }, prof).points === 0, 'Eine kurze Nacht davor, heute gut geschlafen → kein Abzug');
+  const veryShortY = readinessBase([...entries.filter((e) => (e.day ?? e.date) !== day(24)), { date: day(24), sleepH: 4.5 }], prof, day(25));
+  ok(rd({ ...ci(), base: veryShortY }, prof).points === 0.5, 'Vorletzte Nacht nur 4,5 h → halber Punkt');
+  ok(rd({ ...ci(), sleepH: 6, sleep: 'gut', base }, prof).points === 0.5, '6 h (gut) statt ~8 h wie sonst → halber Punkt');
+  ok(rd({ ...ci(), sleep: 'schlecht', sleepH: 5, base: shortY }, prof).points === 2, 'Schlaf bleibt bei 2 Punkten gedeckelt');
+
+  ok(/normal ~50, Schnitt 10 Tage/.test(ciText({ ...ci(), hr: 57, base })), 'KI-Text nennt den Schnitt');
+  log(`${pass} Tests bestanden, ${fail} fehlgeschlagen (Schnitt)`);
 }
 
 // --- Trainingsblock: Split, Periodisierung, Deload

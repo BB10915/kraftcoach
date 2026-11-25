@@ -390,3 +390,17 @@ input[type=text], input[type=number], input[type=password], input[type=search], 
 .focus-next { text-align: center; }
 .focus-next .num { font-size: 18px; margin-top: 6px; }
 .wo-top { background: rgba(26,36,47,.92); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); margin-left: -16px; margin-right: -16px; padding-left: 16px; padding-right: 16px; }
+
+/* Fortschritts-Netzdiagramm */
+.radar { display: block; width: 100%; max-width: 420px; margin: 0 auto; overflow: visible; }
+.radar text { font-family: inherit; }
+.radar-legend { display: flex; justify-content: center; gap: 16px; margin: 2px 0 8px; }
+.radar-legend i { display: inline-block; width: 14px; height: 10px; border-radius: 3px; margin-right: 6px; background: var(--accent-soft); border: 2px solid var(--accent); vertical-align: -1px; }
+.radar-legend i.before { background: none; border: 2px dashed var(--gold); }
+.radar-row { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 0; border: 0; border-top: 1px solid var(--line); background: none; text-align: left; color: inherit; font: inherit; }
+button.radar-row { cursor: pointer; }
+.radar-row.off b { color: var(--faint); }
+.radar-v { font-weight: 700; font-size: 18px; white-space: nowrap; text-align: right; }
+.radar-d { display: block; font-size: 12px; font-weight: 600; color: var(--muted); }
+.radar-d.up { color: var(--accent); }
+.radar-d.down { color: var(--danger); }

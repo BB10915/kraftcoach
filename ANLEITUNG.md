@@ -100,6 +100,9 @@ Es sind allgemeine Empfehlungen, keine medizinische oder Ernährungsberatung.
 iPhone-**Kurzbefehl** Ruhepuls, HRV, Schlaf, Gewicht und Schritte aus Health und kopiert sie. Im Check-in tippst du auf
 **❤️ Werte aus Apple Health holen**: Die Werte landen im Check-in, das Gewicht im Profil. Die Schritt-für-Schritt-Anleitung
 für den Kurzbefehl steht in der App unter *Einstellungen → Apple Health*. Optional läuft der Kurzbefehl jeden Morgen automatisch.
+Jeder Health-Import und jeder Check-in beim Planen wird pro Tag gespeichert (auch Gewichtsänderungen aus Profil oder Chat).
+Unter *Fortschritt → Körperwerte* siehst du Ruhepuls, HRV, Schlaf, Schritte, Aktivkalorien und Gewicht als Verlauf
+(30/90/365 Tage) mit Ø 7 Tage und Trend. Die Werte sind Teil der Sicherung.
 
 **Übungsanleitungen:** Zu jeder Übung gibt es eine kurze Anleitung mit **Animation** (Strichfigur mit Hantel/Gerät),
 den wichtigsten Schritten und typischen Fehlern. Die App schlägt sie von selbst vor (💡), wenn eine Übung **neu für dich** ist
@@ -181,9 +184,9 @@ Dann im Browser <http://localhost:8123> öffnen. Mit `Ctrl + C` im Terminal wied
 | `js/data/goals.js` | Ziele, Check-in-Optionen, Tagesform-Bewertung, Startwert-Übungen |
 | `js/data/profile.js` | Erweitertes Profil (Körper, Ernährung, Tagesablauf …) |
 | `js/data/guides.js` | Übungsanleitungen (Schritte, Fehler, Schwierigkeit) und wann sie vorgeschlagen werden |
-| `js/logic/` | Rechenlogik: 1RM, Satzvorschläge, Zeitplanung, Erholung, lokaler Planer, Trainingsblock/Deload (`block.js`), Tages-Coach, Statistik |
+| `js/logic/` | Rechenlogik: 1RM, Satzvorschläge, Zeitplanung, Erholung, lokaler Planer, Trainingsblock/Deload (`block.js`), Tages-Coach, Statistik, Körperwerte-Tagebuch |
 | `js/ai/` | Gemini-Anbindung, JSON-Schema-Prüfung, Prompt; `chat.js`/`chatactions.js` = Coach-Chat und was er ändern darf |
 | `js/views/` | Bildschirme: Heute, Training, Fortschritt, Übung, Einstellungen; `anim.js` = Übungsanimationen, `chat.js` = Chatfenster |
 | `js/store.js` | Speicherung im Browser (IndexedDB), Backup |
 | `sw.js`, `manifest.webmanifest` | Installation als App, Offline-Betrieb |
-| `tests/logic.test.js` | 200 automatische Tests |
+| `tests/logic.test.js` | 273 automatische Tests |
