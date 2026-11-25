@@ -118,6 +118,16 @@ nie Daten löschen oder den Schlüssel sehen. Ohne KI-Schlüssel (oder offline) 
 Der Verlauf bleibt nur auf deinem Handy; „Leeren“ löscht ihn. Knopf ausblenden: *Einstellungen → KI*.
 Jede Chat-Nachricht ist eine KI-Anfrage aus dem Gratis-Kontingent (dieselbe Bremse wie beim Tagesplan).
 
+**Trainingsblock (Wochenplanung):** Die App plant über mehrere Wochen in **Blöcken**. Standard sind 5 Wochen:
+Woche 1 **Einstieg** (eine Wiederholung mehr Reserve), dann **Aufbau** (volles Volumen, steigern), die vorletzte Woche **Intensiv**
+(ein Satz mehr bei den Hauptübungen, näher ans Limit) und zum Schluss eine **Deload**-Woche: gleiche Übungen, etwa halbes Volumen,
+rund 10 % leichter, RIR 3. Danach beginnt der nächste Block. Auf *Heute* siehst du Woche, Phase und welcher Tag dran ist.
+Der **Split** richtet sich nach deinen Trainingstagen: 2× Ganzkörper A/B, 3× Ganzkörper A/B/C, 3–4× oder 4× Ober-/Unterkörper,
+5+× Push/Pull/Beine (Anfänger bekommen den einfacheren Split). Die Tage wechseln sich der Reihe nach ab, egal an welchem Wochentag
+du trainierst. Ein Wunsch im Check-in (z. B. Fokus Oberkörper) oder Schmerzen gehen vor. Sind deine Check-ins ab Woche 3 mehrmals
+schwach, schlägt die App vor, den Deload vorzuziehen. Unter *Einstellungen → Trainingsblock* stellst du ein: Deload alle 4, 5 oder
+6 Wochen, Split (automatisch oder fest), **Deload diese Woche** und **Neuen Block starten**. Lokaler Planer und KI halten sich beide daran.
+
 **Heute:** Verfügbare Zeit wählen (Standard 50 Min) → **Plan erstellen**. Jede Übung zeigt die geschätzte Dauer.
 Mit ⇄ tauschst du eine Übung (z. B. Gerät belegt), mit ✕ entfernst du sie. Dann **Training starten**.
 
@@ -169,9 +179,9 @@ Dann im Browser <http://localhost:8123> öffnen. Mit `Ctrl + C` im Terminal wied
 | `js/data/goals.js` | Ziele, Check-in-Optionen, Tagesform-Bewertung, Startwert-Übungen |
 | `js/data/profile.js` | Erweitertes Profil (Körper, Ernährung, Tagesablauf …) |
 | `js/data/guides.js` | Übungsanleitungen (Schritte, Fehler, Schwierigkeit) und wann sie vorgeschlagen werden |
-| `js/logic/` | Rechenlogik: 1RM, Satzvorschläge, Zeitplanung, Erholung, lokaler Planer, Tages-Coach, Statistik |
+| `js/logic/` | Rechenlogik: 1RM, Satzvorschläge, Zeitplanung, Erholung, lokaler Planer, Trainingsblock/Deload (`block.js`), Tages-Coach, Statistik |
 | `js/ai/` | Gemini-Anbindung, JSON-Schema-Prüfung, Prompt; `chat.js`/`chatactions.js` = Coach-Chat und was er ändern darf |
 | `js/views/` | Bildschirme: Heute, Training, Fortschritt, Übung, Einstellungen; `anim.js` = Übungsanimationen, `chat.js` = Chatfenster |
 | `js/store.js` | Speicherung im Browser (IndexedDB), Backup |
 | `sw.js`, `manifest.webmanifest` | Installation als App, Offline-Betrieb |
-| `tests/logic.test.js` | 163 automatische Tests |
+| `tests/logic.test.js` | 200 automatische Tests |

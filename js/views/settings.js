@@ -8,6 +8,7 @@ import { SEX, OCCUPATION, PLACE, INTENSITY, DIETS } from '../data/profile.js';
 import { STEP } from './onboarding.js';
 import { parseHealth, healthText } from '../logic/health.js';
 import { testConnection, usageToday, AiError } from '../ai/gemini.js';
+import { blockState, SPLIT_CHOICES, SPLITS, withDeloadNow, withNewBlock } from '../logic/block.js';
 import { toast, confirmSheet } from '../ui.js';
 import { updateFab } from './chat.js';
 import { esc, parseNum, dayKey, fmtNum } from '../util.js';
@@ -45,6 +46,26 @@ schritte: [Statistik Schritte]</pre></li>
     <li><b>Automatisch jeden Morgen (optional):</b> Kurzbefehle → <b>Automation</b> → <b>+</b> → <b>Tageszeit</b> (z. B. 07:00) → <b>Sofort ausführen</b> → Kurzbefehl „KraftCoach Health“.</li>
   </ol>
   <p class="tiny faint" style="margin:8px 0 0">Die Namen der Aktionen können je nach iOS-Version leicht abweichen. Fehlt ein Wert (z. B. HRV ohne Uhr), die Zeile einfach weglassen – die App nimmt, was da ist.</p>`;
+}
+
+function blockCard() {
+  const b = blockState(S.settings, S.sessions);
+  const cfg = S.settings.training.block ?? {};
+  const split = cfg.split ?? 'auto';
+  const chip = (act, v, l, on) => `<button type="button" class="chip ${on ? 'on' : ''}" data-act="${act}" data-v="${v}">${l}</button>`;
+  return `<div class="card">
+    <p class="small" style="margin-top:0">Die App plant in Blöcken: Einstieg → Aufbau → Intensiv → <b>Deload</b> (Entlastungswoche mit etwa halbem Volumen). Danach beginnt der nächste Block.</p>
+    <div class="small"><b>Jetzt:</b> Woche ${b.week} von ${b.weeks} · ${esc(b.label)}${b.forced ? ' (vorgezogen)' : ''} · seit ${esc(b.start.split('-').reverse().join('.'))}</div>
+    <div class="small muted" style="margin:12px 0 6px">Deload alle</div>
+    <div class="chips">${[4, 5, 6].map((w) => chip('block-weeks', w, `${w} Wochen`, b.weeks === w)).join('')}</div>
+    <div class="small muted" style="margin:12px 0 6px">Split</div>
+    <div class="chips">${SPLIT_CHOICES.map(([k, l]) => chip('block-split', k, l, split === k)).join('')}</div>
+    <p class="tiny faint" style="margin:6px 0 0">${split === 'auto' ? `Automatisch nach ${esc(S.settings.profile.daysPerWeek)} Trainings pro Woche: ` : ''}${esc(SPLITS[b.scheme].label)}. Nächster Tag: ${esc(b.day.label)}.</p>
+    <div class="btn-row" style="margin-top:12px">
+      ${b.forced ? '<button type="button" class="btn sm" data-act="block-undo-deload">Deload zurücknehmen</button>' : b.deload ? '' : '<button type="button" class="btn sm" data-act="block-deload">Deload diese Woche</button>'}
+      <button type="button" class="btn sm" data-act="block-new">Neuen Block starten</button>
+    </div>
+  </div>`;
 }
 
 /** Kurze Zusammenfassung je Profilbereich. */
@@ -103,6 +124,9 @@ export function render(root, route, app) {
       ${(t.guideKnown ?? []).length ? `<button type="button" class="btn sm ghost" data-act="guide-reset" style="margin-top:4px">„Kann ich“ zurücksetzen (${t.guideKnown.length} Übungen)</button>` : ''}
     </div>
 
+    <h2>Trainingsblock</h2>
+    ${blockCard()}
+
     <h2>KI-Coach (Google Gemini)</h2>
     <div class="card">
       <label class="check"><input type="checkbox" name="aiEnabled" ${st.ai.enabled ? 'checked' : ''}> KI für Tagespläne und Coach-Chat verwenden</label>
@@ -152,6 +176,21 @@ export function render(root, route, app) {
       return toast(h ? `Erkannt: ${healthText(h)}` : 'In der Zwischenablage sind keine Health-Werte. Zuerst den Kurzbefehl starten.', h ? '' : 'err');
     }
     if (act === 'guide-reset') { await saveForm(form); S.settings.training.guideKnown = []; await store.saveSettings(); toast('Anleitungen werden wieder vorgeschlagen'); return render(root, route, app); }
+    if (act.startsWith('block-')) {
+      await saveForm(form);
+      let st = JSON.parse(JSON.stringify(S.settings));
+      st.training.block ??= {};
+      if (act === 'block-weeks') st.training.block.weeks = +el.dataset.v;
+      if (act === 'block-split') st.training.block.split = el.dataset.v;
+      if (act === 'block-deload') st = withDeloadNow(st);
+      if (act === 'block-undo-deload') st.training.block.deloadWeek = null;
+      if (act === 'block-new') {
+        if (!(await confirmSheet('Neuen Block starten?', 'Diese Woche wird Woche 1 (Einstieg) eines neuen Blocks.', 'Neu starten'))) return;
+        st = withNewBlock(st);
+      }
+      await store.saveSettings(st);
+      return render(root, route, app);
+    }
     if (act === 'toggle-key') { await saveForm(form); showKey = !showKey; return render(root, route, app); }
     if (act === 'model') { form.model.value = el.dataset.id; await saveForm(form); return render(root, route, app); }
     if (act === 'test') {

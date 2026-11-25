@@ -10,6 +10,7 @@ import { muscleStatus } from '../logic/history.js';
 import { ENERGY, SLEEP, SLEEP_H, STRESS, LAST_MEAL, ATE, LOADS, REGIONS, WISHES, DEFAULT_CHECKIN, checkinText, readiness, LEVEL_TEXT } from '../data/goals.js';
 import { planDay, fmtL } from '../logic/daycoach.js';
 import { parseHealth, sleepChip, healthText } from '../logic/health.js';
+import { blockState, blockLine, withDeloadNow, PHASES } from '../logic/block.js';
 import { openPicker } from './picker.js';
 import { openGuide, adviceFor } from './guide.js';
 import { toast, confirmSheet, sheet, ring, ICONS } from '../ui.js';
@@ -74,6 +75,32 @@ function dayHtml(sess) {
   <p class="tiny faint" style="text-align:center;margin:4px 0 0">Allgemeine Empfehlungen, keine medizinische oder Ernährungsberatung. Angaben unter <a href="#/einstellungen">Einstellungen → Profil</a>.</p>`;
 }
 
+// ---------- Trainingsblock: Woche, Phase, Split-Tag ----------
+
+function blockHtml() {
+  const b = blockState(S.settings, S.sessions);
+  const segs = Array.from({ length: b.weeks }, (_, i) => {
+    const w = i + 1;
+    const isDl = w === b.weeks;
+    const cur = w === b.week;
+    const past = w < b.week;
+    const bg = cur ? (b.deload ? 'var(--info)' : 'var(--accent)') : past ? 'var(--faint)' : 'var(--surface-2)';
+    return `<div title="Woche ${w}" style="flex:1;height:8px;border-radius:4px;background:${bg};${isDl && !cur ? 'outline:1px dashed var(--info);outline-offset:-1px' : ''}"></div>`;
+  }).join('');
+  const target = S.settings.profile.daysPerWeek;
+  return `<div class="card">
+    <div class="row between" style="align-items:baseline">
+      <b>Woche ${b.week} von ${b.weeks} · <span style="color:${b.deload ? 'var(--info)' : 'var(--accent)'}">${esc(b.label)}${b.forced ? ' (vorgezogen)' : ''}</span></b>
+      <span class="tiny faint">Block ${b.blockNo}</span>
+    </div>
+    <div class="row" style="gap:4px;margin:10px 0 8px">${segs}</div>
+    <div class="tiny muted">${esc(b.text)}</div>
+    <div class="small" style="margin-top:10px">Heute dran: <b>${esc(b.day.label)}</b> <span class="muted">· ${esc(b.day.focus)}</span></div>
+    <div class="tiny faint" style="margin-top:4px">${esc(b.schemeLabel)}${b.autoSplit ? ' (automatisch)' : ''} · diese Woche ${b.doneThisWeek} von ${esc(target)} Einheiten${b.deload ? '' : ` · Deload in ${b.untilDeload} Woche${b.untilDeload === 1 ? '' : 'n'}`}</div>
+    ${b.hint ? `<div class="pill-note" style="margin-top:10px;color:var(--warn)">${esc(b.hint)}</div><button class="btn sm block" data-act="deload-now" style="margin-top:8px">Deload diese Woche</button>` : ''}
+  </div>`;
+}
+
 const LEVEL_FILL = { voll: 1, normal: 0.75, reduziert: 0.5, regeneration: 0.25 };
 
 function heroHtml(c) {
@@ -90,7 +117,8 @@ function planHtml(p) {
   <div class="card accent">
     <div class="row between" style="align-items:flex-start">
       <div class="grow"><h2 style="margin:0 0 4px">${esc(p.title)}</h2>
-        <div class="small muted">${fmtDate(p.date)} · Budget ${p.budgetMin} Min</div></div>
+        <div class="small muted">${fmtDate(p.date)} · Budget ${p.budgetMin} Min</div>
+        ${p.block ? `<div class="tiny" style="margin-top:2px;color:${p.block.deload ? 'var(--info)' : 'var(--muted)'}">${esc(blockLine(p.block))}</div>` : ''}</div>
       <span class="badge ${p.source === 'ai' ? 'accent' : ''}">${p.source === 'ai' ? 'KI-Plan' : p.source === 'manual' ? 'Frei' : 'Lokaler Plan'}</span>
     </div>
     ${p.fallback ? `<div class="pill-note" style="margin-top:10px;color:var(--warn)">⚠︎ ${esc(p.fallback)}</div>` : ''}
@@ -314,6 +342,12 @@ function summaryHtml(id) {
 
 export function render(root, route, app) {
   budget ??= S.settings.training.defaultMin || 50;
+  // Ersten Block mit dieser Woche beginnen (einmalig speichern).
+  if (!S.settings.training.block?.start) {
+    const st = JSON.parse(JSON.stringify(S.settings));
+    st.training.block = { ...(st.training.block ?? {}), start: blockState(st, []).weekStart };
+    store.saveSettings(st);
+  }
   const active = store.activeSession();
   const planned = plannedSession();
   const doneId = route.query.get('fertig');
@@ -325,7 +359,7 @@ export function render(root, route, app) {
     body += `<div class="card accent"><h3>Training läuft</h3><p class="small muted" style="margin:0 0 12px">${esc(active.title || 'Training')} · seit ${min} Min</p>
       <a class="btn primary block" href="#/training">Weiter trainieren</a></div>`;
   } else if (planned) body += (planned.checkin ? heroHtml(planned.checkin) : '') + planHtml(planned);
-  else body += (doneId ? '' : heroHtml(checkin)) + chooserHtml();
+  else body += (doneId ? '' : heroHtml(checkin)) + blockHtml() + chooserHtml();
   const todaySess = active ?? planned ?? (doneId ? store.sessionById(doneId) : null);
   if (todaySess) body += dayHtml(todaySess);
   body += recoveryHtml() + recentHtml();
@@ -339,6 +373,11 @@ export function render(root, route, app) {
     const act = el.dataset.act;
     const p = plannedSession();
     readInputs(root);
+    if (act === 'deload-now') {
+      await store.saveSettings(withDeloadNow(S.settings));
+      toast('Diese Woche ist jetzt Deload-Woche');
+      return render(root, route, app);
+    }
     if (act === 'day-toggle') { dayOpen = !dayOpen; return render(root, route, app); }
     if (act === 'ci-more') { showMore = true; return render(root, route, app); }
     if (act === 'health') return importHealth(() => render(root, route, app));
@@ -412,7 +451,7 @@ export function render(root, route, app) {
         onPick: async (id) => {
           const fresh = makeItem(id, S.settings, { role: it.role });
           // Vorgaben (Sätze/Wdh./RIR) möglichst übernehmen
-          Object.assign(fresh, it.kind === fresh.kind && fresh.kind === 'strength' ? { sets: it.sets, repsMin: it.repsMin, repsMax: it.repsMax, rir: it.rir } : {}, { uid: it.uid, note: '' });
+          Object.assign(fresh, it.kind === fresh.kind && fresh.kind === 'strength' ? { sets: it.sets, repsMin: it.repsMin, repsMax: it.repsMax, rir: it.rir, ...(it.loadPct ? { loadPct: it.loadPct } : {}) } : {}, { uid: it.uid, note: '' });
           p.items = p.items.map((i) => (i.uid === it.uid ? fresh : i));
           await store.putSession(p);
           toast(`Getauscht: ${getEx(id).name}`);
@@ -428,6 +467,7 @@ export function render(root, route, app) {
         equipment: S.settings.profile.equipment,
         onPick: async (id) => {
           const it = makeItem(id, S.settings);
+          if (p.block?.deload && it.kind === 'strength') Object.assign(it, { sets: 2, rir: 3, loadPct: PHASES.deload.loadPct });
           const finIdx = p.items.findIndex((i) => i.role === 'finisher');
           if (finIdx >= 0 && it.role !== 'finisher') p.items.splice(finIdx, 0, it);
           else p.items.push(it);
@@ -448,7 +488,7 @@ async function createPlan(useAi, root, route, app) {
     const plan = await makePlan({ settings: S.settings, sessions: S.sessions, sets: S.sets, budgetMin: budget, useAi, checkin: ci });
     const s = {
       id: uid(), date: new Date().toISOString(), status: 'planned', budgetMin: budget,
-      title: plan.title, rationale: plan.rationale, source: plan.source, items: plan.items, checkin: ci, dayAi: plan.dayAi ?? null,
+      title: plan.title, rationale: plan.rationale, source: plan.source, items: plan.items, checkin: ci, dayAi: plan.dayAi ?? null, block: plan.block ?? null,
       fallback: plan.fallbackReason ? `KI nicht verfügbar: ${plan.fallbackReason.message} Lokaler Plan erstellt.` : '',
     };
     await store.putSession(s);

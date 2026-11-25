@@ -85,6 +85,10 @@ export function suggestNext({ ex, item, lastSet, bodyweight = 80, calibrating = 
 
   const est = e1rm(effLoad(ex, lastSet.weight, bodyweight), lastSet.reps, rirVal) * FATIGUE;
   const next = pick(est, c, lastSet.weight);
+  // Deload: innerhalb der Einheit nicht steigern, auch wenn es leicht ist.
+  if (item.loadPct && item.loadPct < 1 && next.weight > lastSet.weight) {
+    return { weight: lastSet.weight, reps: clamp(lastSet.reps, c.min, c.max), reason: 'Deload: Gewicht halten, auch wenn es leicht fällt' };
+  }
   return { ...next, reason: reasonText(diff, lastSet, next, c.rir) };
 }
 
@@ -92,7 +96,22 @@ export function suggestNext({ ex, item, lastSet, bodyweight = 80, calibrating = 
  * Erster Satz einer Übung in dieser Einheit – aus der Historie (vorige Einheiten).
  * prevSessions = [{ sets:[{weight,reps,rir}], date }] neueste zuerst
  */
-export function suggestFirst({ ex, item, prevSessions = [], bodyweight = 80, experience = 'fortgeschritten', now = Date.now(), baseline = null }) {
+export function suggestFirst(args) {
+  const s = suggestFirstRaw(args);
+  const pct = args.item?.loadPct;
+  if (!pct || pct >= 1 || s.calibrating || !args.prevSessions?.some((p) => p.sets.length) && !args.baseline) return s;
+  // Deload: rund 10 % leichter (Körpergewicht: ohne Zusatzgewicht/weniger Wdh.).
+  const { ex, item, bodyweight = 80 } = args;
+  const c = ctxOf(ex, item, bodyweight);
+  if (c.isBw) {
+    const w = roundTo(s.weight * pct, c.step, 'floor');
+    return { ...s, weight: w, reps: clamp(s.reps, c.min, c.max), reason: `Deload: leichter als sonst – ${s.reason}` };
+  }
+  const w = Math.max(minWeight(c), roundTo(s.weight * pct, c.step, 'floor'));
+  return { ...s, weight: w, reason: `Deload: ~${Math.round((1 - pct) * 100)} % leichter (sonst ${fmtNum(s.weight)} kg)` };
+}
+
+function suggestFirstRaw({ ex, item, prevSessions = [], bodyweight = 80, experience = 'fortgeschritten', now = Date.now(), baseline = null }) {
   const c = ctxOf(ex, item, bodyweight);
   const last = prevSessions.find((p) => p.sets.length);
   if (!last && baseline?.reps > 0 && (baseline.weight > 0 || c.isBw)) {

@@ -4,6 +4,7 @@ import { EXERCISES, getEx } from '../data/exercises.js';
 import { profileText } from '../data/profile.js';
 import { nutritionTargets, targetsText } from '../logic/daycoach.js';
 import { workSets } from '../logic/history.js';
+import { blockState, blockText } from '../logic/block.js';
 import { generateJson, AiError } from './gemini.js';
 import { validate } from './schema.js';
 import { ACTION_DOC, ACTION_TYPES, parseLocalCommand } from './chatactions.js';
@@ -42,13 +43,14 @@ Gesundheit: Keine Diagnosen. Bei Schmerzen (stechend, einschießend, Gelenk) zum
 Nutze die Daten unten (Profil, laufendes Training, Leistungen), um persönlich zu antworten. Wenn du etwas nicht weißt, sag es.`;
 
 /** Kompakter Stand der App für die KI (wird jeder Frage frisch mitgegeben). */
-export function chatContext({ settings, session = null, sets = [], doneCount = () => 0, now = Date.now() }) {
+export function chatContext({ settings, session = null, sets = [], sessions = [], doneCount = () => 0, now = Date.now() }) {
   const p = settings.profile, t = settings.training;
   const L = [];
   const d = new Date(now);
   L.push(`JETZT: ${d.toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' })}, ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')} Uhr`);
   L.push(`\nPROFIL\n${profileText(p)}`);
   L.push(`\nEINSTELLUNGEN: Standarddauer ${t.defaultMin} Min, Pause Grundübung ${t.restCompound} s, Pause Isolation ${t.restIsolation} s, Aufwärmen ${p.warmupMin} Min, Finisher ${p.finisher ? 'an' : 'aus'}, Ton ${t.sound ? 'an' : 'aus'}, Vibration ${t.vibrate ? 'an' : 'aus'}, Bildschirm an ${t.wakeLock ? 'ja' : 'nein'}, Anleitungs-Vorschläge ${t.guideHints !== false ? 'an' : 'aus'}`);
+  L.push(`\nTRAININGSBLOCK\n${blockText(blockState(settings, sessions, now))}`);
 
   if (session) {
     const active = session.status === 'active';
@@ -94,7 +96,7 @@ export function cleanReply(raw) {
  * Eine Chat-Nachricht beantworten.
  * @returns {{ text, actions, source: 'ai'|'local', error?: AiError }}
  */
-export async function askCoach({ message, history = [], settings, session, sets, doneCount }) {
+export async function askCoach({ message, history = [], settings, session, sets, sessions = [], doneCount }) {
   const local = (err) => {
     const actions = parseLocalCommand(message, { hasSession: !!session, active: session?.status === 'active' });
     if (actions) return { text: 'Mache ich:', actions, source: 'local', error: err };
@@ -104,7 +106,7 @@ export async function askCoach({ message, history = [], settings, session, sets,
     return { text: `${why}\nOhne KI verstehe ich einfache Befehle wie „Pause 2 Minuten“, „heute nur 40 Minuten“, „4 Sätze“ oder „Ton aus“.`, actions: [], source: 'local', error: err };
   };
   if (!settings.ai.apiKey || !settings.ai.enabled) return local(null);
-  const prompt = `${chatContext({ settings, session, sets, doneCount })}\n\nNACHRICHT DES NUTZERS:\n${message}`;
+  const prompt = `${chatContext({ settings, session, sets, sessions, doneCount })}\n\nNACHRICHT DES NUTZERS:\n${message}`;
   try {
     const raw = await generateJson({ apiKey: settings.ai.apiKey, model: settings.ai.model, system: SYSTEM, prompt, schema: CHAT_SCHEMA, history: history.slice(-10) });
     return { ...cleanReply(raw), source: 'ai' };

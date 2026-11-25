@@ -456,3 +456,109 @@ import { chatContext, cleanReply, CHAT_SCHEMA } from '../js/ai/chat.js';
   ok(ctx.includes('TRAINING LÄUFT') && ctx.includes('lh-bankdruecken') && ctx.includes('← AKTUELL') && !ctx.includes(st.ai.apiKey || 'AIza'), 'Chat-Kontext enthält Training, aber keinen Schlüssel');
   log(`${pass} Tests bestanden, ${fail} fehlgeschlagen (Chat)`);
 }
+
+// --- Trainingsblock: Split, Periodisierung, Deload
+import { blockState, blockTag, dayForToday, splitFor, withDeloadNow, withNewBlock, DAYS } from '../js/logic/block.js';
+import { matchesDay } from '../js/ai/plan.js';
+import { PATTERNS } from '../js/data/exercises.js';
+{
+  const W = 7 * 86400000;
+  // Fester Montag 12:00 als "jetzt", damit Wochengrenzen eindeutig sind.
+  const mon = new Date(2026, 10, 23, 12, 0).getTime();
+  const sb = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
+  sb.training.block = { start: '2026-11-23', weeks: 5, split: 'auto', deloadWeek: null };
+  sb.profile.daysPerWeek = '3–4';
+  sb.profile.experience = 'fortgeschritten';
+  const at = (wk, extra = {}) => blockState({ ...sb, training: { ...sb.training, block: { ...sb.training.block, ...extra } } }, [], mon + wk * W + 2 * 86400000);
+  const phases = [0, 1, 2, 3, 4, 5].map((w) => at(w).phase);
+  ok(JSON.stringify(phases) === '["einstieg","aufbau","aufbau","intensiv","deload","einstieg"]', 'Block 5 Wochen: Phasen ' + phases);
+  ok(at(5).blockNo === 2 && at(5).week === 1, 'Nach Deload startet Block 2');
+  ok(at(0, { weeks: 4 }).weeks === 4 && at(3, { weeks: 4 }).deload && at(2, { weeks: 4 }).phase === 'intensiv', 'Block 4 Wochen');
+  ok(at(5, { weeks: 6 }).deload && at(4, { weeks: 6 }).phase === 'intensiv', 'Block 6 Wochen');
+  ok(at(0, { weeks: 9 }).weeks === 6 && at(0, { weeks: 1 }).weeks === 4, 'Blocklänge auf 4–6 begrenzt');
+  ok(at(1, { start: null }).week === 1, 'Ohne Start: diese Woche = Woche 1');
+  // Vorgezogener Deload in Woche 2, danach neuer Block
+  ok(at(1, { deloadWeek: '2026-11-30' }).deload && at(1, { deloadWeek: '2026-11-30' }).forced, 'Deload vorgezogen');
+  const after = at(2, { deloadWeek: '2026-11-30' });
+  ok(after.week === 1 && after.phase === 'einstieg', 'Nach vorgezogenem Deload: Woche 1 → ' + after.week);
+  const wd = withDeloadNow(sb, mon + W);
+  ok(wd.training.block.deloadWeek === '2026-11-30' && sb.training.block.deloadWeek === null, 'withDeloadNow ohne Nebenwirkung');
+  ok(withNewBlock(sb, mon + 3 * W).training.block.start === '2026-12-14', 'Neuer Block ab dieser Woche');
+
+  // Split nach Trainingstagen
+  const sp = (days, exp = 'fortgeschritten', split = 'auto') => splitFor({ profile: { daysPerWeek: days, experience: exp }, training: { block: { split } } }).scheme;
+  ok(sp('2') === 'gk2' && sp('3') === 'gk' && sp('3–4') === 'okuk' && sp('4') === 'okuk' && sp('5+') === 'ppl', 'Auto-Split nach Tagen');
+  ok(sp('3–4', 'anfaenger') === 'gk' && sp('5+', 'anfaenger') === 'okuk', 'Anfänger: einfacherer Split');
+  ok(sp('5+', 'fortgeschritten', 'gk') === 'gk' && sp('2', 'x', 'ppl') === 'ppl', 'Split manuell');
+
+  // Rotation: nach Oberkörper kommt Unterkörper
+  let bs = blockState(sb, [], mon);
+  ok(bs.dayId === 'ok', 'Rotation startet mit Oberkörper');
+  const done1 = [{ id: 'a', status: 'done', date: new Date(mon - 86400000).toISOString(), startedAt: mon - 86400000, block: blockTag(bs) }];
+  bs = blockState(sb, done1, mon);
+  ok(bs.dayId === 'uk', 'Danach Unterkörper');
+  const regenS = [...done1, { id: 'b', status: 'done', date: new Date(mon - 3600000).toISOString(), startedAt: mon - 3600000, block: blockTag(bs, { regen: true }) }];
+  ok(blockState(sb, regenS, mon).dayId === 'uk', 'Regeneration zählt nicht für die Rotation');
+  ok(blockState(sb, done1, mon).doneThisWeek === 0 && blockState(sb, done1, mon + 86400000).doneThisWeek === 0, 'Einheiten diese Woche zählen ab Montag');
+  ok(dayForToday(bs, { wish: 'oberkoerper' }).dayId === 'ok' && dayForToday(bs, { wish: 'oberkoerper' }).changed, 'Wunsch Oberkörper ändert den Split-Tag');
+
+  // Lokaler Planer: Split-Tag wird eingehalten
+  const regionsOf = (pl) => pl.items.filter((i) => i.kind === 'strength').map((i) => PATTERNS[EX[i.exerciseId].pattern].region);
+  const okPlan = planLocal({ settings: sb, sets: [], budgetMin: 60, now: mon, block: blockState(sb, [], mon) });
+  ok(regionsOf(okPlan).every((r) => ['push', 'pull', 'core'].includes(r)) && okPlan.title === 'Oberkörper', 'OK-Tag ohne Beinübungen: ' + regionsOf(okPlan));
+  ok(okPlan.dayId === 'ok' && okPlan.dayIdx === 0 && /Woche 1\/5/.test(okPlan.rationale), 'Plan kennt Tag und Woche');
+  const ukPlan = planLocal({ settings: sb, sets: [], budgetMin: 60, now: mon, block: blockState(sb, done1, mon) });
+  ok(regionsOf(ukPlan).every((r) => ['lower', 'core'].includes(r)), 'UK-Tag nur Beine/Rumpf: ' + regionsOf(ukPlan));
+  ok(ukPlan.items.filter((i) => i.role === 'main').length >= 2, 'UK-Tag mit 2 Hauptübungen');
+  // Schmerzen in den Beinen am UK-Tag → Ganzkörper ohne Beine, Rotation bleibt stehen
+  const ukPain = planLocal({ settings: sb, sets: [], budgetMin: 50, now: mon, block: blockState(sb, done1, mon), checkin: { energy: 'normal', sleep: 'okay', sore: [], pain: ['beine'], wish: '' } });
+  ok(ukPain.dayIdx === null && /nicht machbar/.test(ukPain.rationale), 'Split-Tag nicht machbar → Ersatz, keine Rotation');
+
+  // PPL
+  const sp5 = JSON.parse(JSON.stringify(sb)); sp5.profile.daysPerWeek = '5+';
+  const pushPlan = planLocal({ settings: sp5, sets: [], budgetMin: 50, now: mon, block: blockState(sp5, [], mon) });
+  ok(regionsOf(pushPlan).every((r) => ['push', 'core'].includes(r)) && pushPlan.title === 'Push', 'Push-Tag: ' + regionsOf(pushPlan));
+
+  // Periodisierung: Einstieg mehr Reserve, Intensiv mehr Sätze, Deload halbes Volumen
+  const gk = JSON.parse(JSON.stringify(sb)); gk.profile.daysPerWeek = '3';
+  const mk = (wk) => planLocal({ settings: gk, sets: [], budgetMin: 60, now: mon + wk * W, block: blockState(gk, [], mon + wk * W) });
+  const mainOf = (pl) => pl.items.find((i) => i.role === 'main');
+  const e = mk(0), a = mk(1), i3 = mk(3), d = mk(4);
+  ok(mainOf(e).rir === mainOf(a).rir + 1, 'Einstieg: RIR +1');
+  ok(mainOf(i3).sets === mainOf(a).sets + 1 && mainOf(i3).rir === Math.max(1, mainOf(a).rir - 1), 'Intensiv: +1 Satz, RIR −1');
+  const strSets = (pl) => pl.items.filter((x) => x.kind === 'strength').reduce((s2, x) => s2 + x.sets, 0);
+  ok(strSets(d) <= strSets(a) * 0.6, `Deload: Volumen etwa halbiert (${strSets(d)} vs ${strSets(a)})`);
+  ok(d.items.filter((x) => x.kind === 'strength').every((x) => x.rir >= 3 && x.loadPct === 0.9), 'Deload: RIR 3, 90 % Last');
+  ok(d.items.filter((x) => x.role === 'accessory').length <= 2 && /Deload/.test(d.title), 'Deload: max. 2 Isolationsübungen, Titel');
+  ok(sessionSec(d.items) <= 60 * 60 * 0.85, 'Deload-Einheit kürzer');
+  ok(e.title === 'Ganzkörper A' && mk(0).items.some((x) => x.role === 'main' && EX[x.exerciseId].pattern === 'squat'), 'Ganzkörper A mit Kniebeuge');
+
+  // Lastvorschlag im Deload: ~10 % leichter, innerhalb der Einheit nicht steigern
+  const benchD = { repsMin: 6, repsMax: 10, rir: 3, sets: 2, loadPct: 0.9 };
+  const prevB = [{ date: mon - 3 * 86400000, sets: [{ weight: 80, reps: 8, rir: 2 }] }];
+  const normalF = suggestFirst({ ex: EX['lh-bankdruecken'], item: { ...benchD, loadPct: undefined }, prevSessions: prevB, now: mon });
+  const deloadF = suggestFirst({ ex: EX['lh-bankdruecken'], item: benchD, prevSessions: prevB, now: mon });
+  ok(deloadF.weight < normalF.weight && deloadF.weight >= normalF.weight * 0.85 && /Deload/.test(deloadF.reason), `Deload-Startgewicht leichter: ${deloadF.weight} vs ${normalF.weight}`);
+  const dn = suggestNext({ ex: EX['lh-bankdruecken'], item: benchD, lastSet: { weight: 70, reps: 10, rir: 4 } });
+  ok(dn.weight === 70, 'Deload: Gewicht halten trotz RIR 4+');
+
+  // KI-Prompt enthält den Block, Deload wird abgesichert, Split-Check
+  const ctxB = buildPrompt({ settings: sb, sessions: [], sets: [], budgetMin: 50, now: mon });
+  ok(ctxB.prompt.includes('TRAININGSBLOCK') && ctxB.prompt.includes('Woche 1 von 5') && ctxB.prompt.includes('Oberkörper') && ctxB.today.dayId === 'ok', 'Prompt mit Block und Split-Tag');
+  const dBlock = blockState(sb, [], mon + 4 * W);
+  ok(buildPrompt({ settings: sb, sessions: [], sets: [], budgetMin: 50, now: mon + 4 * W }).prompt.includes('Phase: Deload'), 'Prompt in der Deload-Woche');
+  const rawD = { titel: 'X', begruendung: '', aufwaermen: { minuten: 5, inhalt: '' }, finisher: { id: ctxB.cardioIds[0], minuten: 0, inhalt: '' },
+    tag: { kernaussage: '', abschnitte: [] },
+    uebungen: [
+      { id: 'lh-bankdruecken', saetze: 4, wdhMin: 6, wdhMax: 8, zielRir: 1, pauseSek: 150 },
+      { id: 'kz-rudern', saetze: 4, wdhMin: 8, wdhMax: 10, zielRir: 2, pauseSek: 120 },
+      { id: 'kh-seitheben', saetze: 3, wdhMin: 12, wdhMax: 15, zielRir: 1, pauseSek: 60 },
+      { id: 'kh-bizepscurl', saetze: 3, wdhMin: 10, wdhMax: 12, zielRir: 1, pauseSek: 60 },
+      { id: 'kz-trizepsdruecken', saetze: 3, wdhMin: 10, wdhMax: 12, zielRir: 1, pauseSek: 60 },
+    ] };
+  const cv = convertPlan(rawD, { settings: sb, budgetMin: 50, allowedIds: ctxB.allowedIds, cardioIds: ctxB.cardioIds, block: dBlock });
+  const cs = cv.items.filter((x) => x.kind === 'strength');
+  ok(cs.every((x) => x.rir >= 3 && x.loadPct === 0.9 && x.sets <= 3) && cs.filter((x) => x.role === 'accessory').length <= 2, 'KI-Plan im Deload begrenzt');
+  ok(matchesDay(cs, DAYS.ok) && !matchesDay(cs, DAYS.uk) && matchesDay(cs, DAYS.gkA), 'Split-Check für KI-Plan');
+  log(`${pass} Tests bestanden, ${fail} fehlgeschlagen (Trainingsblock)`);
+}

@@ -52,6 +52,13 @@ function unitLabel(ex) {
   return 'kg';
 }
 
+/** Deload-Einheiten nicht als Maßstab nehmen (sonst startet man danach zu leicht bzw. im Deload doppelt reduziert). */
+function refSessions(prev) {
+  const deloadIds = new Set(S.sessions.filter((x) => x.block?.deload).map((x) => x.id));
+  const normal = prev.filter((p) => !deloadIds.has(p.sessionId));
+  return normal.length ? normal : prev;
+}
+
 /** Vorschlag für den nächsten Satz des aktuellen Items berechnen (gecacht pro Satznummer). */
 function ensureDraft(sess, it) {
   const ex = getEx(it.exerciseId);
@@ -68,7 +75,7 @@ function ensureDraft(sess, it) {
     sug = suggestFirst({
       ex, item: it, bodyweight: bw, experience: S.settings.profile.experience,
       baseline: S.settings.profile.baselines?.[it.exerciseId],
-      prevSessions: prevSessionsFor(it.exerciseId, S.sets, { excludeSessionId: sess.id, bodyweight: bw }),
+      prevSessions: refSessions(prevSessionsFor(it.exerciseId, S.sets, { excludeSessionId: sess.id, bodyweight: bw })),
     });
     if (it.calibrating !== sug.calibrating) {
       it.calibrating = sug.calibrating;

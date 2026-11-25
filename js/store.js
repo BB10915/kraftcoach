@@ -37,6 +37,9 @@ export const DEFAULT_SETTINGS = {
     wakeLock: true,
     guideHints: true, // Anleitungen für neue/technische Übungen vorschlagen
     guideKnown: [], // Übungen, bei denen „Kann ich schon“ getippt wurde
+    // Mehrwochenplanung (siehe js/logic/block.js): Blockstart (Montag), Länge inkl. Deload-Woche,
+    // Split ('auto' | 'gk' | 'okuk' | 'ppl') und ggf. vorgezogene Deload-Woche.
+    block: { start: null, weeks: 5, split: 'auto', deloadWeek: null },
   },
 };
 

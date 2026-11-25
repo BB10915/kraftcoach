@@ -194,7 +194,7 @@ async function send(raw) {
   const session = currentSession();
   let reply;
   try {
-    reply = await askCoach({ message: text, history, settings: S.settings, session, sets: S.sets, doneCount: doneCountFor(session) });
+    reply = await askCoach({ message: text, history, settings: S.settings, session, sets: S.sets, sessions: S.sessions, doneCount: doneCountFor(session) });
   } catch (e) {
     reply = { text: `Da ging etwas schief: ${e?.message ?? e}`, actions: [] };
   }
