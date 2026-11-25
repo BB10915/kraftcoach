@@ -1,8 +1,8 @@
 // Service Worker: speichert die App-Dateien, damit sie offline startet.
 // Bei jeder Änderung an der App VERSION erhöhen, damit Handys das Update laden.
-const VERSION = 'kc-v10';
+const VERSION = 'kc-v11';
 const FILES = [
-  './', './index.html', './manifest.webmanifest', './css/app.css', './assets/fonts/barlow-condensed-700-latin.woff2', './assets/fonts/barlow-condensed-700-latin-ext.woff2',
+  './', './index.html', './manifest.webmanifest', './css/app.css',
   './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png',
   './js/main.js', './js/util.js', './js/store.js', './js/ui.js', './js/timer.js',
   './js/data/exercises.js', './js/data/goals.js', './js/data/profile.js', './js/data/guides.js', './js/logic/daycoach.js', './js/logic/health.js',

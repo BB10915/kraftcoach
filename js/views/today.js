@@ -12,7 +12,7 @@ import { planDay, fmtL } from '../logic/daycoach.js';
 import { parseHealth, sleepChip, healthText } from '../logic/health.js';
 import { openPicker } from './picker.js';
 import { openGuide, adviceFor } from './guide.js';
-import { toast, confirmSheet, sheet, ICONS } from '../ui.js';
+import { toast, confirmSheet, sheet, ring, ICONS } from '../ui.js';
 import { esc, uid, fmtDate, fmtMin, fmtNum, relDays, clamp } from '../util.js';
 
 let budget = null;
@@ -72,6 +72,15 @@ function dayHtml(sess) {
     <ul class="small" style="margin:8px 0 0;padding-left:18px">${b.items.map((x) => `<li style="margin:4px 0">${esc(x)}</li>`).join('')}</ul>
   </div>`).join('')}
   <p class="tiny faint" style="text-align:center;margin:4px 0 0">Allgemeine Empfehlungen, keine medizinische oder Ernährungsberatung. Angaben unter <a href="#/einstellungen">Einstellungen → Profil</a>.</p>`;
+}
+
+const LEVEL_FILL = { voll: 1, normal: 0.75, reduziert: 0.5, regeneration: 0.25 };
+
+function heroHtml(c) {
+  const { level } = readiness(c, S.settings.profile);
+  const [title, text] = LEVEL_TEXT[level];
+  const tone = level === 'voll' || level === 'normal' ? 'var(--accent)' : level === 'reduziert' ? 'var(--warn)' : 'var(--info)';
+  return `<section class="hero">${ring(LEVEL_FILL[level], `<span>Tagesform</span><b>${title}</b>`, tone)}<p>${text}</p></section>`;
 }
 
 function planHtml(p) {
@@ -265,11 +274,11 @@ function recoveryHtml() {
   const entries = Object.entries(st).filter(([, o]) => o.last);
   if (!entries.length) return '';
   entries.sort((a, b) => a[1].readiness - b[1].readiness);
-  return `<h2>Erholung</h2><div class="card tight"><div class="chips">${entries
+  return `<h2>Erholung</h2><div class="card"><div class="rings">${entries
     .map(([m, o]) => {
       const pct = Math.round(o.readiness * 100);
-      const cls = pct >= 90 ? 'accent' : pct >= 60 ? '' : 'warn';
-      return `<span class="badge ${cls}" style="font-size:13px;padding:6px 10px">${MUSCLES[m]} ${pct} %</span>`;
+      const tone = pct >= 90 ? 'var(--accent)' : pct >= 60 ? 'var(--info)' : 'var(--warn)';
+      return `<div>${ring(o.readiness, `<b>${pct}%</b>`, tone)}<small>${MUSCLES[m]}</small></div>`;
     })
     .join('')}</div></div>`;
 }
@@ -315,8 +324,8 @@ export function render(root, route, app) {
     const min = Math.round((Date.now() - active.startedAt) / 60000);
     body += `<div class="card accent"><h3>Training läuft</h3><p class="small muted" style="margin:0 0 12px">${esc(active.title || 'Training')} · seit ${min} Min</p>
       <a class="btn primary block" href="#/training">Weiter trainieren</a></div>`;
-  } else if (planned) body += planHtml(planned);
-  else body += chooserHtml();
+  } else if (planned) body += (planned.checkin ? heroHtml(planned.checkin) : '') + planHtml(planned);
+  else body += (doneId ? '' : heroHtml(checkin)) + chooserHtml();
   const todaySess = active ?? planned ?? (doneId ? store.sessionById(doneId) : null);
   if (todaySess) body += dayHtml(todaySess);
   body += recoveryHtml() + recentHtml();

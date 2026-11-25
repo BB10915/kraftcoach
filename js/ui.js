@@ -102,3 +102,9 @@ export const ICONS = {
   info: '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></svg>',
   trophy: '🏆',
 };
+
+/** Fortschrittsring (0–1) mit beliebigem Inhalt in der Mitte. */
+export function ring(value, inner, tone = 'var(--accent)') {
+  const v = Math.max(0, Math.min(1, value || 0));
+  return `<div class="ring" style="--tone:${tone}"><svg viewBox="0 0 100 100" aria-hidden="true" style="overflow:visible"><circle class="track" cx="50" cy="50" r="46"/>${v ? `<circle class="val" cx="50" cy="50" r="46" pathLength="100" stroke-dasharray="${v * 100} 100"/>` : ''}</svg><div class="ring-in">${inner}</div></div>`;
+}
