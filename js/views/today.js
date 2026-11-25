@@ -10,6 +10,7 @@ import { muscleStatus } from '../logic/history.js';
 import { ENERGY, SLEEP, SLEEP_H, STRESS, LAST_MEAL, ATE, LOADS, REGIONS, WISHES, DEFAULT_CHECKIN, checkinText, readiness, LEVEL_TEXT } from '../data/goals.js';
 import { planDay, fmtL } from '../logic/daycoach.js';
 import { parseHealth, sleepChip, healthText } from '../logic/health.js';
+import { entryFromCheckin } from '../logic/bodylog.js';
 import { openPicker } from './picker.js';
 import { openGuide, adviceFor } from './guide.js';
 import { toast, confirmSheet, sheet, ring, ICONS } from '../ui.js';
@@ -150,6 +151,7 @@ async function applyHealth(h) {
     await store.saveSettings(st);
     msg += ` · Gewicht auf ${fmtNum(h.weight)} kg aktualisiert`;
   }
+  await store.putBodyDay(entryFromCheckin(checkin)); // Tageswerte für den Verlauf
   toast(msg);
 }
 
@@ -452,6 +454,7 @@ async function createPlan(useAi, root, route, app) {
       fallback: plan.fallbackReason ? `KI nicht verfügbar: ${plan.fallbackReason.message} Lokaler Plan erstellt.` : '',
     };
     await store.putSession(s);
+    await store.putBodyDay(entryFromCheckin(ci)).catch(() => {}); // Check-in für den Verlauf
     if (plan.fallbackReason) toast(plan.fallbackReason.message, 'err');
   } catch (e) {
     toast('Plan konnte nicht erstellt werden: ' + (e?.message ?? e), 'err');

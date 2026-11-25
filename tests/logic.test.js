@@ -370,6 +370,54 @@ import { parseHealth, parseLooseNumber, parseSleep, sleepChip } from '../js/logi
   log(`${pass} Tests bestanden, ${fail} fehlgeschlagen (Apple Health)`);
 }
 
+// ---------- Körperwerte-Tagebuch ----------
+import { entryFromCheckin, cleanEntry, mergeEntry, normalizeLog, seriesOf, summaryOf, dayTs } from '../js/logic/bodylog.js';
+import { dayKey } from '../js/util.js';
+{
+  const NOW = new Date(2026, 10, 25, 9).getTime(); // 25.11.2026, 9 Uhr
+  const D = 86400000;
+  const ci = { ...DEFAULT_CI(), sleepH: 7, hr: 61, health: { hr: 58, hrv: 62, sleepH: 7.2, weight: 80.4, steps: 8500, activeKcal: 450 } };
+  let e = entryFromCheckin(ci, { now: NOW });
+  ok(e.day === '2026-11-25' && e.at === NOW, 'Tagebuch: Tag aus Datum');
+  ok(e.hr === 58 && e.sleepH === 7.2 && e.hrv === 62 && e.weight === 80.4 && e.steps === 8500 && e.activeKcal === 450, 'Tagebuch: Health-Werte haben Vorrang vor Chips: ' + JSON.stringify(e));
+  ok(e.energy === 'normal' && e.sleep === 'okay' && !('stress' in e), 'Tagebuch: Selbsteinschätzung übernommen, leere Felder weg');
+  e = entryFromCheckin({ ...DEFAULT_CI(), hr: 64, sleepH: 6 }, { now: NOW });
+  ok(e.hr === 64 && e.sleepH === 6 && !('hrv' in e) && !('steps' in e), 'Tagebuch: Check-in ohne Health');
+  ok(entryFromCheckin(null) === null && entryFromCheckin({}, { now: NOW }) === null, 'Tagebuch: leerer Check-in → nichts speichern');
+  ok(entryFromCheckin({ hr: 400, health: { weight: 5, steps: -3 } }, { now: NOW }) === null, 'Tagebuch: unsinnige Werte verworfen');
+  ok(cleanEntry({ day: '2026-11-25', hr: '58', weight: '80,44' }).weight === 80.4 && cleanEntry({ day: '2026-11-25', hr: '58' }).hr === 58, 'Tagebuch: Text-Zahlen und Rundung');
+  ok(cleanEntry({ hr: 60 }) === null, 'Tagebuch: ohne Tag ungültig');
+
+  const m = mergeEntry({ day: '2026-11-25', at: 1, hr: 58, sleepH: 7.2, energy: 'normal' }, { day: '2026-11-25', at: 2, weight: 80, energy: 'hoch' });
+  ok(m.hr === 58 && m.sleepH === 7.2 && m.weight === 80 && m.energy === 'hoch' && m.at === 2, 'Tagebuch: zweiter Eintrag am Tag ergänzt statt überschreibt: ' + JSON.stringify(m));
+  ok(mergeEntry(null, { day: 'x', hr: 1 }).hr === 1 && mergeEntry({ day: 'x', hr: 1 }, null).hr === 1, 'Tagebuch: merge mit leer');
+
+  const n = normalizeLog([{ day: '2026-11-03', hr: 60 }, { day: '2026-11-01', hr: 62 }, { day: '2026-11-03', hrv: 50 }, { day: '2026-11-02' }, null]);
+  ok(n.length === 2 && n[0].day === '2026-11-01' && n[1].hr === 60 && n[1].hrv === 50, 'Tagebuch: sortiert, je Tag einer, Leere raus: ' + JSON.stringify(n));
+
+  // 28 Tage: Ruhepuls erst 60, letzte Woche 66; HRV erst 60, dann 48; Gewicht konstant; Schritte lückenhaft
+  const blog = normalizeLog(Array.from({ length: 28 }, (_, i) => {
+    const t = NOW - (27 - i) * D, late = i >= 21;
+    return { day: dayKey(t), at: t, hr: late ? 66 : 60, hrv: late ? 48 : 60, weight: 80 + (i % 2) * 0.2, ...(i % 3 ? {} : { steps: 9000 }) };
+  }));
+  ok(blog.length === 28 && blog[27].day === '2026-11-25', 'Tagebuch: Testreihe aufgebaut');
+  let pts = seriesOf(blog, 'hr', { days: 7, now: NOW });
+  ok(pts.length === 7 && pts.every((p) => p.y === 66) && pts[6].x === dayTs('2026-11-25'), 'Verlauf: 7 Tage inkl. heute');
+  ok(seriesOf(blog, 'steps', { days: 30, now: NOW }).length === 10, 'Verlauf: Tage ohne Wert fehlen im Diagramm');
+  ok(seriesOf(blog, 'hr', { days: 30, now: NOW - 40 * D }).length === 0, 'Verlauf: nichts in der Zukunft');
+  let su = summaryOf(blog, 'hr', { now: NOW });
+  ok(su.last.value === 66 && su.last.day === '2026-11-25' && su.avg7 === 66 && near(su.delta, 6) && su.trend === 'schlecht', 'Trend: Ruhepuls steigt → schlechter: ' + JSON.stringify(su));
+  su = summaryOf(blog, 'hrv', { now: NOW });
+  ok(su.trend === 'schlecht' && near(su.delta, -12), 'Trend: HRV fällt → schlechter');
+  ok(summaryOf(blog, 'weight', { now: NOW }).trend === 'gleich', 'Trend: Gewicht schwankt nur → stabil');
+  ok(summaryOf(blog, 'sleepH', { now: NOW }).last === null && summaryOf(blog, 'sleepH', { now: NOW }).trend === null, 'Trend: ohne Daten → keiner');
+  su = summaryOf(blog.slice(-3), 'hr', { now: NOW });
+  ok(su.trend === null && su.avg7 === 66, 'Trend: zu wenig Tage → keine Wertung');
+  const down = blog.map((x, i) => ({ ...x, weight: i >= 21 ? 78 : 80 }));
+  ok(summaryOf(down, 'weight', { now: NOW }).trend === 'ab', 'Trend: Gewicht ohne Wertung (sinkt)');
+  log(`${pass} Tests bestanden, ${fail} fehlgeschlagen (Körperwerte)`);
+}
+
 // ---------- Übungsanleitungen & Animationen ----------
 import { GUIDES, guideFor, guideAdvice, timesDone } from '../js/data/guides.js';
 import { ANIMS, solve, poseAt, frameSvg } from '../js/views/anim.js';
