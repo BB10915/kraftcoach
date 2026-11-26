@@ -4,6 +4,7 @@ import { EXERCISES, getEx } from '../data/exercises.js';
 import { profileText } from '../data/profile.js';
 import { nutritionTargets, targetsText } from '../logic/daycoach.js';
 import { workSets } from '../logic/history.js';
+import { checkoutsText } from '../logic/checkout.js';
 import { blockState, blockText } from '../logic/block.js';
 import { generateJson, AiError } from './gemini.js';
 import { validate } from './schema.js';
@@ -71,6 +72,8 @@ export function chatContext({ settings, session = null, sets = [], sessions = []
     }
   } else L.push('\nHEUTE: noch kein Training geplant.');
 
+  const fb = checkoutsText(sessions, { now });
+  if (fb !== 'keine') L.push(`\nRÜCKMELDUNG NACH DEN LETZTEN EINHEITEN (Session-RPE 0–10, Gefühl, Notiz):\n${fb}`);
   const recent = workSets(sets).filter((x) => x.sessionId !== session?.id).slice(-40);
   if (recent.length) {
     const best = new Map();

@@ -8,6 +8,7 @@ import { progressRadar, FITNESS_AXES, STRENGTH_AXES } from '../logic/radar.js';
 import { radarSvg } from './radar.js';
 import { METRICS, METRIC_KEYS, seriesOf, summaryOf } from '../logic/bodylog.js';
 import { lineChart, bindCharts } from './chart.js';
+import { weeklyLoad, checkoutLine, titleOf, feelOf, sessionLoad } from '../logic/checkout.js';
 import { confirmSheet, toast, ICONS } from '../ui.js';
 import { esc, fmtNum, fmtDate, fmtDateShort, fmtMin, dayKey, startOfWeek, DAY, MONTHS_LONG } from '../util.js';
 
@@ -81,6 +82,35 @@ function volumeHtml() {
       <button class="icon-btn" data-act="wk-next" aria-label="Nächste Woche" ${weekOffset >= 0 ? 'disabled style="opacity:.3"' : ''}>›</button>
     </div>${rows}
     <p class="tiny muted" style="margin:10px 0 0">Arbeitssätze je Muskel (Hauptmuskel 1, mitbeteiligt ½). Heller Bereich = Ziel ${TARGET[0]}–${TARGET[1]} Sätze.</p>`;
+}
+
+// ---------- Trainingslast (Session-RPE × Minuten) ----------
+
+function loadHtml() {
+  const weeks = weeklyLoad(S.sessions, { weeks: 8 });
+  if (!weeks.some((w) => w.rated)) {
+    return `<div class="card empty small"><p style="margin:0">Gib nach dem Training an, wie anstrengend es war (0–10). Daraus wird hier deine Trainingslast pro Woche: Anstrengung × Minuten.</p></div>`;
+  }
+  const max = Math.max(...weeks.map((w) => w.load), 1);
+  const cur = weeks[weeks.length - 1];
+  const prev = weeks.slice(-5, -1).filter((w) => w.rated);
+  const avg = prev.length ? Math.round(prev.reduce((a, w) => a + w.load, 0) / prev.length) : null;
+  const bars = weeks.map((w, i) => {
+    const h = Math.max(w.load ? 4 : 0, Math.round((w.load / max) * 100));
+    const part = w.n > w.rated ? ` (${w.rated} von ${w.n} Einheiten bewertet)` : '';
+    return `<div class="load-col" title="Woche ab ${fmtDateShort(w.start)}: ${w.load}${part}${w.deload ? ' · Deload' : ''}">
+      <div class="load-bar"><i style="height:${h}%;${w.deload ? 'background:var(--info)' : ''}${i === weeks.length - 1 ? '' : ';opacity:.7'}"></i></div>
+      <span class="tiny faint">${fmtDateShort(w.start)}</span></div>`;
+  }).join('');
+  const kp = (v, l) => `<div class="kpi"><b class="num">${v}</b><span>${l}</span></div>`;
+  return `<div class="card">
+    <div class="kpis four" style="grid-template-columns:repeat(2,1fr);margin:0 0 12px">
+      ${kp(cur.load ? cur.load.toLocaleString('de-DE') : '–', `diese Woche${cur.n > cur.rated ? ` (${cur.rated}/${cur.n} bewertet)` : ''}`)}
+      ${kp(avg != null ? avg.toLocaleString('de-DE') : '–', 'Ø der bewerteten Wochen davor (bis 4)')}
+    </div>
+    <div class="load-chart">${bars}</div>
+    <p class="tiny muted" style="margin:10px 0 0">Trainingslast = Anstrengung (0–10) × Minuten, pro Woche addiert (Session-RPE nach Foster). Blau = Deload-Woche. Sinnvoll ist ein allmählicher Anstieg im Block und ein klarer Rückgang in der Deload-Woche.</p>
+  </div>`;
 }
 
 // ---------- Körperwerte ----------
@@ -177,6 +207,9 @@ export function render(root, route, app) {
   <h2>Körperwerte</h2>
   ${bodyHtml()}
 
+  <h2>Trainingslast</h2>
+  ${loadHtml()}
+
   <h2>Wochenvolumen pro Muskelgruppe</h2>
   <div class="card">${volumeHtml()}</div>
 
@@ -199,8 +232,17 @@ export function render(root, route, app) {
   <div class="card tight">${[...done].reverse().slice(0, 30).map((s) => {
     const sets = store.setsOf(s.id).filter((x) => !x.warmup);
     const names = [...new Set(sets.map((x) => getEx(x.exerciseId).name))];
-    return `<div class="plan-item"><div class="grow"><div class="name">${esc(s.title || 'Training')} <span class="tiny muted">· ${fmtDate(s.startedAt ?? s.date)}</span></div>
-      <div class="meta">${s.endedAt ? fmtMin((s.endedAt - s.startedAt) / 1000) : '–'} · ${sets.length} Sätze · ${esc(names.slice(0, 4).join(', '))}${names.length > 4 ? ' …' : ''}</div></div>
+    const c = s.checkout;
+    const feel = feelOf(c?.feel);
+    const line = checkoutLine(c ? { ...c, feel: null } : null);
+    const load = sessionLoad(s);
+    return `<div class="plan-item hist-item">
+      <button class="grow hist-open" data-act="open" data-id="${esc(s.id)}">
+        <div class="name">${feel ? `${feel[2]} ` : ''}${esc(titleOf(s))} <span class="tiny muted">· ${fmtDate(s.startedAt ?? s.date)}</span></div>
+        <div class="meta">${s.endedAt ? fmtMin((s.endedAt - s.startedAt) / 1000) : '–'} · ${sets.length} Sätze · ${esc(names.slice(0, 4).join(', '))}${names.length > 4 ? ' …' : ''}</div>
+        ${line ? `<div class="meta">${esc(line)}${load != null ? ` · Last ${load}` : ''}</div>` : '<div class="meta faint">+ Abschluss nachtragen</div>'}
+      </button>
+      ${c?.photo ? `<img class="hist-thumb" src="${c.photo}" alt="" data-act="open" data-id="${esc(s.id)}">` : ''}
       <button class="icon-btn" data-act="del" data-id="${s.id}" aria-label="Einheit löschen">${ICONS.x}</button></div>`;
   }).join('')}</div>
   <p class="tiny faint" style="text-align:center">${MONTHS_LONG[new Date().getMonth()]} ${new Date().getFullYear()}</p>`;
@@ -211,6 +253,7 @@ export function render(root, route, app) {
     if (!el) return;
     const act = el.dataset.act;
     if (await bodyClick(act, el, () => render(root, route, app))) return;
+    if (act === 'open') return app.go(`#/abschluss/${encodeURIComponent(el.dataset.id)}`);
     if (act === 'ex') return app.go(`#/uebung/${encodeURIComponent(el.dataset.id)}`);
     if (act === 'radar' || act === 'radar-axis') { radarView = el.dataset.v ?? 'strength'; return render(root, route, app); }
     if (act === 'wk-prev') { weekOffset--; return render(root, route, app); }

@@ -104,6 +104,13 @@ Jeder Health-Import und jeder Check-in beim Planen wird pro Tag gespeichert (auc
 Unter *Fortschritt → Körperwerte* siehst du Ruhepuls, HRV, Schlaf, Schritte, Aktivkalorien und Gewicht als Verlauf
 (30/90/365 Tage) mit Ø 7 Tage und Trend. Die Werte sind Teil der Sicherung.
 
+**Nach dem Training:** Nach „Training beenden“ kommt der Bildschirm **Training speichern**: Titel, wie anstrengend
+die ganze Einheit war (0–10, Session-RPE), wie du dich gefühlt hast, Schmerzen, Notiz und ein Foto (bleibt nur auf dem Handy).
+Alles ist optional und lässt sich später unter *Fortschritt → Verlauf* ändern oder nachtragen. Anstrengung × Minuten ergibt die
+**Trainingslast**, die unter *Fortschritt → Trainingslast* pro Woche steht. Gemeldete Schmerzen sind im nächsten Check-in
+(bis 3 Tage) schon ausgewählt. War die letzte Einheit sehr hart (9–10) und ist sie weniger als 48 h her, plant die App etwas
+mehr Reserve ein. Die KI bekommt die letzten Rückmeldungen und Notizen mit.
+
 **Übungsanleitungen:** Zu jeder Übung gibt es eine kurze Anleitung mit **Animation** (Strichfigur mit Hantel/Gerät),
 den wichtigsten Schritten und typischen Fehlern. Die App schlägt sie von selbst vor (💡), wenn eine Übung **neu für dich** ist
 oder **technisch anspruchsvoll** (z. B. Kniebeuge, Kreuzheben) und du Anfänger/Wiedereinsteiger bist. Bei einfachen Maschinen
@@ -184,9 +191,9 @@ Dann im Browser <http://localhost:8123> öffnen. Mit `Ctrl + C` im Terminal wied
 | `js/data/goals.js` | Ziele, Check-in-Optionen, Tagesform-Bewertung, Startwert-Übungen |
 | `js/data/profile.js` | Erweitertes Profil (Körper, Ernährung, Tagesablauf …) |
 | `js/data/guides.js` | Übungsanleitungen (Schritte, Fehler, Schwierigkeit) und wann sie vorgeschlagen werden |
-| `js/logic/` | Rechenlogik: 1RM, Satzvorschläge, Zeitplanung, Erholung, lokaler Planer, Trainingsblock/Deload (`block.js`), Tages-Coach, Statistik, Körperwerte-Tagebuch |
+| `js/logic/` | Rechenlogik: 1RM, Satzvorschläge, Zeitplanung, Erholung, lokaler Planer, Trainingsblock/Deload (`block.js`), Abschluss/Trainingslast (`checkout.js`), Tages-Coach, Statistik, Körperwerte-Tagebuch |
 | `js/ai/` | Gemini-Anbindung, JSON-Schema-Prüfung, Prompt; `chat.js`/`chatactions.js` = Coach-Chat und was er ändern darf |
-| `js/views/` | Bildschirme: Heute, Training, Fortschritt, Übung, Einstellungen; `anim.js` = Übungsanimationen, `chat.js` = Chatfenster |
+| `js/views/` | Bildschirme: Heute, Training, Training speichern (`checkout.js`), Fortschritt, Übung, Einstellungen; `anim.js` = Übungsanimationen, `chat.js` = Chatfenster |
 | `js/store.js` | Speicherung im Browser (IndexedDB), Backup |
 | `sw.js`, `manifest.webmanifest` | Installation als App, Offline-Betrieb |
-| `tests/logic.test.js` | 273 automatische Tests |
+| `tests/logic.test.js` | 298 automatische Tests |
