@@ -2,6 +2,7 @@
 
 import { EXERCISES, EX, MUSCLES, PATTERNS, EQUIPMENT, getEx } from '../data/exercises.js';
 import { muscleStatus, prevSessionsFor, workSets } from '../logic/history.js';
+import { checkoutsText } from '../logic/checkout.js';
 import { makeItem, planLocal } from '../logic/planner.js';
 import { fitToBudget } from '../logic/timing.js';
 import { setE1rm } from '../logic/e1rm.js';
@@ -77,6 +78,7 @@ Regeln:
 - Aufwärmen (Beweglichkeit) ca. 5 Min passend zu den Übungen. Finisher = kurzer Konditionsblock (5–8 Min); bei weniger als 40 Min Budget minuten = 0.
 - Bewegungsmuster bei Hauptübungen gelegentlich variieren, aber bekannte Übungen für den Fortschritt öfter wiederholen.
 - Richte Wiederholungsbereiche, Volumen und Finisher an den ZIELEN aus (z. B. Stärker werden: Hauptübungen 4–6 Wdh.; Muskelaufbau: 6–12 Wdh.; Fitter werden/Fett abbauen: längerer Finisher; Beweglicher/Gesund: längeres Mobility-Aufwärmen).
+- RÜCKMELDUNGEN nutzen: Notizen zu Technik, Gewicht oder Beschwerden aus den letzten Einheiten berücksichtigen. War die letzte Einheit sehr hart (RPE 9–10) und ist kaum 2 Tage her, etwas mehr Reserve lassen.
 - TAGESFORM beachten: Bei niedriger Energie oder schlechtem Schlaf weniger Sätze und Ziel-RIR +1. Muskelkater-Bereiche nur leicht belasten. SCHMERZ-Bereiche komplett meiden. Bei guter Form darf es etwas mehr sein. Einen Wunsch (z. B. Fokus Oberkörper) umsetzen, wenn die Erholung es erlaubt.
 - TRAININGSBLOCK (Mehrwochenplanung): Halte dich an den Split-Tag von heute (nur dessen Muskelgruppen, z. B. am Oberkörper-Tag keine Beinübungen) und an die Vorgabe der Phase (Einstieg/Aufbau/Intensiv/Deload). Der Split folgt der Studienlage (jede Muskelgruppe mind. 2× pro Woche, ca. 10–20 Arbeitssätze pro Muskel und Woche; Split und Ganzkörper sind bei gleichem Volumen gleichwertig) – keine Trend-Splits wie Bro-Split. Tagesform und Schmerzen haben Vorrang: Ist der Split-Tag heute nicht sinnvoll machbar, plane Ganzkörper nach Erholung und sag kurz warum. In der Deload-Woche bekannte Übungen wiederholen, keine neuen.
 - Erwähne in der begruendung kurz, wie du Ziele, Tagesform und Blockwoche berücksichtigt hast.
@@ -156,6 +158,9 @@ ${recovery}
 
 LETZTE EINHEITEN
 ${last3}
+
+RÜCKMELDUNG NACH DEN LETZTEN EINHEITEN (Session-RPE 0–10, Gefühl, Notiz)
+${checkoutsText(sessions, { now })}
 
 LETZTE LEISTUNGEN (Top-Satz)
 ${perf}

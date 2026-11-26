@@ -13,10 +13,11 @@ import { parseHealth, sleepChip, healthText } from '../logic/health.js';
 import { blockState, blockLine, withDeloadNow, PHASES } from '../logic/block.js';
 import { entryFromCheckin } from '../logic/bodylog.js';
 import { readinessBase } from '../logic/baseline.js';
+import { lastHard, carriedPain, checkoutLine, titleOf, sessionLoad } from '../logic/checkout.js';
 import { openPicker } from './picker.js';
 import { openGuide, adviceFor } from './guide.js';
 import { toast, confirmSheet, sheet, ring, ICONS } from '../ui.js';
-import { esc, uid, fmtDate, fmtMin, fmtNum, relDays, clamp } from '../util.js';
+import { esc, uid, fmtDate, fmtMin, fmtNum, relDays, clamp, dayKey } from '../util.js';
 
 let budget = null;
 export const setBudget = (m) => (budget = m);
@@ -26,9 +27,11 @@ let checkin = JSON.parse(JSON.stringify(DEFAULT_CHECKIN));
 let showBody = false;
 let showMore = false;
 let dayOpen = true;
+let painSeedDay = null; // Tag, an dem Schmerzen aus dem letzten Abschluss übernommen wurden
+let carried = []; // übernommene Schmerzbereiche (für den Hinweis)
 
 /** Check-in mit persönlichem Vergleichswert (Schnitt der letzten Tage, sonst Profil) und Vortag. */
-const withBase = (c) => (!c || c.base ? c : { ...c, base: readinessBase(S.body ?? [], S.settings.profile) });
+const withBase = (c) => (!c || c.base ? c : { ...c, base: { ...readinessBase(S.body ?? [], S.settings.profile), lastHard: lastHard(S.sessions) } });
 
 const plannedSession = () => [...S.sessions].reverse().find((s) => s.status === 'planned');
 
@@ -232,6 +235,7 @@ function checkinHtml() {
     ${chipRow('Schlaf letzte Nacht', SLEEP, c.sleep, 'ci-sleep')}
     ${body
       ? regionRow('Muskelkater', c.sore, 'ci-sore') + regionRow('Schmerzen – wird heute gemieden', c.pain, 'ci-pain', true)
+        + (carried.some((r) => c.pain.includes(r)) ? '<div class="tiny muted" style="margin-top:6px">Aus deinem letzten Trainings-Abschluss übernommen. Tippen zum Abwählen.</div>' : '')
       : '<button class="btn ghost sm block" data-act="ci-body" style="margin-top:12px">+ Muskelkater oder Schmerzen angeben</button>'}
     ${chipRow('Wunsch für heute', WISHES, c.wish, 'ci-wish')}
     ${showMore ? moreHtml() : '<button class="btn ghost sm block" data-act="ci-more" style="margin-top:12px">+ Mehr Angaben (Schlafdauer, Stress, Puls, Essen, Uhrzeit)</button>'}
@@ -325,8 +329,10 @@ function recentHtml() {
     .map((s) => {
       const n = store.setsOf(s.id).filter((x) => !x.warmup).length;
       const dur = s.endedAt && s.startedAt ? fmtMin((s.endedAt - s.startedAt) / 1000) : '–';
-      return `<div class="plan-item"><div class="grow"><div class="name">${esc(s.title || 'Training')}</div>
-        <div class="meta">${fmtDate(s.startedAt ?? s.date)} · ${relDays(s.startedAt ?? s.date)} · ${dur} · ${n} Sätze</div></div></div>`;
+      const co = checkoutLine(s.checkout, { note: false });
+      return `<a class="plan-item" href="#/abschluss/${esc(s.id)}" style="color:inherit;text-decoration:none"><div class="grow"><div class="name">${esc(titleOf(s))}</div>
+        <div class="meta">${fmtDate(s.startedAt ?? s.date)} · ${relDays(s.startedAt ?? s.date)} · ${dur} · ${n} Sätze</div>
+        ${co ? `<div class="meta">${esc(co)}</div>` : ''}</div>${ICONS.chev}</a>`;
     })
     .join('')}</div>`;
 }
@@ -344,6 +350,10 @@ function summaryHtml(id) {
       <div class="kpi"><b class="num">${fmtNum(vol / 1000, 1)}</b><span>Tonnen bewegt</span></div>
     </div>
     ${prs ? `<p style="margin:10px 0 0;color:var(--gold);font-weight:700">🏆 ${prs} neue${prs === 1 ? 'r' : ''} Rekord${prs === 1 ? '' : 'e'}</p>` : ''}
+    ${s.checkout
+      ? `<div class="small" style="margin-top:10px"><b>${esc(titleOf(s))}</b>${checkoutLine(s.checkout) ? `<div class="muted">${esc(checkoutLine(s.checkout))}</div>` : ''}${sessionLoad(s) != null ? `<div class="tiny faint">Trainingslast ${sessionLoad(s)}</div>` : ''}</div>
+         <a class="btn sm" href="#/abschluss/${esc(s.id)}" style="margin-top:10px">Abschluss bearbeiten</a>`
+      : `<a class="btn sm block" href="#/abschluss/${esc(s.id)}" style="margin-top:12px">Training dokumentieren (Anstrengung, Gefühl, Notiz)</a>`}
   </div>`;
 }
 
@@ -358,6 +368,15 @@ export function render(root, route, app) {
   const active = store.activeSession();
   const planned = plannedSession();
   const doneId = route.query.get('fertig');
+  // Schmerzen aus dem letzten Abschluss einmal pro Tag in den Check-in übernehmen.
+  if (!active && !planned && painSeedDay !== dayKey(Date.now())) {
+    painSeedDay = dayKey(Date.now());
+    carried = carriedPain(S.sessions);
+    if (carried.length) {
+      checkin.pain = [...new Set([...checkin.pain, ...carried])];
+      showBody = true;
+    }
+  }
 
   let body = '';
   if (doneId) body += summaryHtml(doneId);

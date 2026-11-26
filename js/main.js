@@ -9,6 +9,7 @@ import * as progress from './views/progress.js';
 import * as exercise from './views/exercise.js';
 import * as settings from './views/settings.js';
 import * as onboarding from './views/onboarding.js';
+import * as checkout from './views/checkout.js';
 import { initChat, updateFab } from './views/chat.js';
 
 const ROUTES = {
@@ -18,6 +19,7 @@ const ROUTES = {
   fortschritt: progress,
   uebung: exercise,
   einstellungen: settings,
+  abschluss: checkout,
 };
 
 let current = null;
@@ -45,7 +47,7 @@ function renderTabbar(name) {
     ['fortschritt', 'Fortschritt', ICONS.stats],
     ['einstellungen', 'Einstellungen', ICONS.settings],
   ];
-  const on = name === 'uebung' ? 'fortschritt' : name;
+  const on = name === 'uebung' || name === 'abschluss' ? 'fortschritt' : name;
   $('#tabbar').innerHTML = `<div class="in">${tabs
     .map(([k, l, ic]) => `<a href="#/${k}" class="${on === k ? 'on' : ''}" ${on === k ? 'aria-current="page"' : ''}>${ic}${k === 'training' && active ? '<span class="dot"></span>' : ''}<span>${l}</span></a>`)
     .join('')}</div>`;
@@ -66,6 +68,8 @@ function render() {
   updateFab(r.name);
   const root = $('#app');
   root.onclick = null;
+  root.oninput = null;
+  root.onchange = null;
   view.render(root, r, app);
 }
 

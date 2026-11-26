@@ -458,7 +458,7 @@ async function onAction(act, el, sess, cur, root, route, app) {
       await store.putSession(sess);
       leave();
       draft = null;
-      return app.go(`#/heute?fertig=${sess.id}`);
+      return app.go(`#/abschluss/${sess.id}?neu=1`);
     }
     case 'abort':
       if (await confirmSheet('Training löschen?', 'Alle Sätze dieser Einheit werden gelöscht.', 'Löschen', { danger: true })) {

@@ -76,6 +76,7 @@ export function checkinText(c) {
   if (c.health?.steps != null) parts.push(`${c.health.steps} Schritte heute`);
   if (c.health?.activeKcal) parts.push(`${c.health.activeKcal} kcal Aktivenergie`);
   if (c.health?.sleepH) parts.push(`Schlaf laut Uhr ${c.health.sleepH} h`);
+  if (b?.lastHard) parts.push(`letzte Einheit sehr hart (RPE ${b.lastHard.rpe}, vor ${b.lastHard.hours} h)`);
   if (c.loads?.length) parts.push(`Belastung heute: ${c.loads.map((k) => label(LOADS, k)).join(', ')}`);
   if (c.trainTime) parts.push(`Training um ${c.trainTime}`);
   if (c.wish) parts.push(`Wunsch: ${label(WISHES, c.wish)}`);
@@ -132,6 +133,8 @@ export function readiness(c, profile = {}) {
     if (ySteps >= 20000) add(1, `gestern sehr viel auf den Beinen (${fmt} Schritte)`);
     else if (ySteps >= 15000 || (ySteps >= 12000 && base.steps && ySteps >= base.steps * 1.8)) add(0.5, `gestern viel unterwegs (${fmt} Schritte)`);
   }
+  // Letzte Einheit sehr hart (Session-RPE ≥ 9, < 48 h her, siehe js/logic/checkout.js) → etwas mehr Reserve
+  if (base.lastHard) add(0.5, `letzte Einheit sehr hart (RPE ${base.lastHard.rpe}, vor ${base.lastHard.hours} h)`);
   if (c.loads?.includes('sport') || c.loads?.includes('arbeit')) add(1, 'heute schon körperlich belastet');
   if (c.ate === 'wenig') add(0.5, 'bisher wenig gegessen');
   if (c.wish === 'locker') add(1, 'Wunsch: locker');

@@ -404,3 +404,20 @@ button.radar-row { cursor: pointer; }
 .radar-d { display: block; font-size: 12px; font-weight: 600; color: var(--muted); }
 .radar-d.up { color: var(--accent); }
 .radar-d.down { color: var(--danger); }
+
+/* Abschluss nach dem Training */
+.rpe-grid { display: grid; grid-template-columns: repeat(11, 1fr); gap: 4px; }
+.rpe-b { height: 44px; border: 0; border-radius: 10px; background: rgba(255,255,255,.07); color: var(--text); font-weight: 700; font-size: 15px; padding: 0; font-variant-numeric: tabular-nums; transition: transform .12s var(--ease), background-color .15s; }
+.rpe-b:active { transform: scale(.94); }
+.rpe-b.on { background: hsl(var(--h) 75% 55%); color: #0b0f13; }
+.chips.feel .chip { padding-left: 10px; padding-right: 12px; }
+.co-photo { position: relative; margin-top: 10px; }
+.co-photo img { display: block; width: 100%; max-height: 360px; object-fit: cover; border-radius: var(--radius-sm); }
+.co-photo .icon-btn { position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,.55); }
+.hist-open { background: none; border: 0; color: inherit; padding: 0; text-align: left; font: inherit; cursor: pointer; min-width: 0; }
+.hist-thumb { width: 48px; height: 48px; border-radius: 10px; object-fit: cover; flex: none; cursor: pointer; }
+.load-chart { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; align-items: end; }
+.load-col { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.load-bar { width: 100%; height: 96px; display: flex; align-items: flex-end; background: rgba(255,255,255,.04); border-radius: 8px; overflow: hidden; }
+.load-bar > i { display: block; width: 100%; background: var(--accent); border-radius: 8px 8px 0 0; }
+@media (max-width: 360px) { .rpe-b { height: 40px; font-size: 13px; } }

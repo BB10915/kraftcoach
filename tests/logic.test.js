@@ -739,3 +739,55 @@ import { PATTERNS } from '../js/data/exercises.js';
   ok(matchesDay(cs, DAYS.ok) && !matchesDay(cs, DAYS.uk) && matchesDay(cs, DAYS.gkA), 'Split-Check für KI-Plan');
   log(`${pass} Tests bestanden, ${fail} fehlgeschlagen (Trainingsblock)`);
 }
+
+// --- Abschluss nach dem Training (Check-out)
+import { cleanCheckout, sessionLoad, durationMin, weeklyLoad, lastHard, carriedPain, checkoutLine, checkoutsText, titleOf, HARD_HOURS } from '../js/logic/checkout.js';
+{
+  const H = 3600000;
+  const c = cleanCheckout({ title: '  Oberkörper schwer  ', rpe: 12, feel: -5, pain: ['schultern', 'quatsch', 'schultern'], note: ' gut ', photo: 'javascript:x' }, 1);
+  ok(c.title === 'Oberkörper schwer' && c.rpe === 10 && c.feel === -2 && c.pain.length === 1 && c.note === 'gut' && c.photo === null && c.at === 1, 'cleanCheckout begrenzt und säubert');
+  ok(cleanCheckout({ rpe: '', feel: null }).rpe === null && cleanCheckout({}).feel === null, 'cleanCheckout leer = null');
+  ok(cleanCheckout({ photo: 'data:image/jpeg;base64,AAA' }).photo.startsWith('data:image/'), 'Foto als Data-URL erlaubt');
+
+  const now = new Date(2026, 10, 26, 18, 0).getTime(); // Do, 26.11.2026
+  const mk = (hAgo, min, co, extra = {}) => ({ id: 'x' + hAgo, status: 'done', title: 'Plan', startedAt: now - hAgo * H - min * 60000, endedAt: now - hAgo * H, date: new Date(now - hAgo * H).toISOString(), checkout: co, ...extra });
+  const s1 = mk(20, 60, { rpe: 9, feel: 1, pain: ['beine'], note: 'Kniebeuge zäh' });
+  ok(durationMin(s1) === 60 && sessionLoad(s1) === 540, 'Session-RPE-Last = RPE × Minuten');
+  ok(sessionLoad(mk(5, 40, { rpe: null })) === null && sessionLoad(mk(5, 40, undefined)) === null, 'ohne RPE keine Last');
+  ok(titleOf(s1) === 'Plan' && titleOf({ ...s1, checkout: { title: 'Eigener' } }) === 'Eigener', 'Titel: eigener vor Plan-Titel');
+
+  const lh = lastHard([s1], now);
+  ok(lh && lh.rpe === 9 && lh.hours === 20, 'sehr harte Einheit vor 20 h erkannt');
+  ok(lastHard([mk(HARD_HOURS + 1, 60, { rpe: 10 })], now) === null, 'nach 48 h nicht mehr');
+  ok(lastHard([mk(20, 60, { rpe: 8 })], now) === null, 'RPE 8 zählt nicht als sehr hart');
+  ok(lastHard([mk(40, 60, { rpe: 10 }), mk(10, 40, { rpe: 6 })], now) === null, 'nur die letzte Einheit zählt');
+  ok(lastHard([{ ...s1, status: 'planned' }], now) === null, 'geplante Einheiten zählen nicht');
+
+  ok(carriedPain([s1], now).join() === 'beine', 'Schmerzen werden übernommen');
+  ok(carriedPain([mk(80, 60, { pain: ['beine'] })], now).length === 0, 'nach 3 Tagen nicht mehr übernommen');
+  ok(carriedPain([mk(30, 60, { pain: ['beine'] }), mk(5, 60, { pain: [] })], now).length === 0, 'neuer Abschluss ohne Schmerz hebt auf');
+
+  const w = weeklyLoad([s1, mk(24 * 8, 50, { rpe: 6 }, { block: { deload: true } }), mk(24 * 8 + 2, 30, undefined)], { weeks: 4, now });
+  ok(w.length === 4 && w[3].load === 540 && w[3].n === 1, 'Wochenlast aktuelle Woche');
+  ok(w[2].load === 300 && w[2].n === 2 && w[2].rated === 1 && w[2].deload, 'Wochenlast Vorwoche mit Deload und unbewerteter Einheit');
+  ok(w[0].load === 0 && w[0].n === 0, 'leere Woche');
+
+  ok(checkoutLine(s1.checkout) === 'RPE 9 (Sehr, sehr schwer) · Gefühl: Gut · Schmerzen: Beine · „Kniebeuge zäh“', 'Abschluss-Zeile');
+  ok(checkoutLine(s1.checkout, { note: false }).endsWith('Beine'), 'Abschluss-Zeile ohne Notiz');
+  ok(checkoutsText([s1], { now }).includes('Kniebeuge zäh') && checkoutsText([], { now }) === 'keine', 'Text für die KI');
+
+  // Tagesform: sehr harte letzte Einheit → etwas mehr Reserve
+  const base = { lastHard: lh };
+  const r0 = rd({ ...DCI }, {});
+  const r1 = rd({ ...DCI, base }, {});
+  ok(r1.points === r0.points + 0.5 && r1.reasons.some((x) => x.includes('RPE 9')), 'Tagesform berücksichtigt harte letzte Einheit');
+  ok(fl({ ...DCI, base }, {}) >= 1, 'harte letzte Einheit → RIR +1 im Plan');
+  ok(ciText({ ...DCI, base }).includes('letzte Einheit sehr hart'), 'Check-in-Text nennt harte Einheit');
+
+  // KI-Prompt enthält die Rückmeldungen
+  const bp = buildPrompt({ settings, sessions: [s1], sets: [], budgetMin: 50, now });
+  ok(bp.prompt.includes('RÜCKMELDUNG NACH DEN LETZTEN EINHEITEN') && bp.prompt.includes('Kniebeuge zäh'), 'Plan-Prompt enthält Abschlüsse');
+  const cc = chatContext({ settings, sessions: [s1], sets: [], now });
+  ok(cc.includes('Kniebeuge zäh'), 'Chat-Kontext enthält Abschlüsse');
+  log(`${pass} Tests bestanden, ${fail} fehlgeschlagen (Abschluss)`);
+}
